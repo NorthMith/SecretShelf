@@ -47,7 +47,7 @@ Argon2 на каждом открытии и сохранении берёт 64 
   `FileInfo.Get/SetAccessControl` (помечены `// SecretShelf`).
 
 Исходный архив: `KeePass-2.61.1-Source.zip`, SHA-256
-`711BD9EC707666167846 9E51BAE876DEBAC07A08C32F1B1C6B3B8FE5E761C13A` сверен с keepass.info.
+`711BD9EC7076661678469E51BAE876DEBAC07A08C32F1B1C6B3B8FE5E761C13A` сверен с keepass.info.
 
 ## Лицензия
 Из-за KeePassLib приложение — производная GPLv2: для себя без ограничений,
