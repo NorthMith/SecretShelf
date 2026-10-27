@@ -5,17 +5,17 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" Topmost="True" ShowInTaskbar="False" ShowActivated="False">
     <!-- Язычок свёрнутой шторки: правый нижний угол над панелью задач. -->
-    <Border x:Name="Tab" Background="#E62A2D34" CornerRadius="8,0,0,8" BorderBrush="#353943" BorderThickness="1,1,0,1"
+    <Border x:Name="Tab" Background="#FFF6F6F3" CornerRadius="8,0,0,8" BorderBrush="#CDCDC6" BorderThickness="1,1,0,1"
             Cursor="Hand" ToolTip="Открыть SecretShelf" MouseLeftButtonUp="Tab_Click">
         <TextBlock x:Name="Arrow" Text="&#xE76B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"
-                   Foreground="#8B909C" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                   Foreground="#65655F" HorizontalAlignment="Center" VerticalAlignment="Center"/>
     </Border>
     <Window.Triggers>
         <EventTrigger RoutedEvent="MouseEnter">
             <BeginStoryboard>
                 <Storyboard>
                     <ColorAnimation Storyboard.TargetName="Tab" Storyboard.TargetProperty="Background.Color"
-                                    To="#FF3A3F49" Duration="0:0:0.12"/>
+                                    To="#FFE3EEFB" Duration="0:0:0.12"/>
                 </Storyboard>
             </BeginStoryboard>
         </EventTrigger>
@@ -23,7 +23,7 @@
             <BeginStoryboard>
                 <Storyboard>
                     <ColorAnimation Storyboard.TargetName="Tab" Storyboard.TargetProperty="Background.Color"
-                                    To="#E62A2D34" Duration="0:0:0.2"/>
+                                    To="#FFF6F6F3" Duration="0:0:0.2"/>
                 </Storyboard>
             </BeginStoryboard>
         </EventTrigger>

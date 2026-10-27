@@ -2,22 +2,29 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:local="clr-namespace:SecretShelf.App">
 
-    <!-- Палитра -->
-    <Color x:Key="BgColor">#F21B1D22</Color>
-    <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}"/>
-    <SolidColorBrush x:Key="Card" Color="#26292F"/>
-    <SolidColorBrush x:Key="CardHover" Color="#2E323A"/>
-    <SolidColorBrush x:Key="Input" Color="#15171B"/>
-    <SolidColorBrush x:Key="Line" Color="#353943"/>
-    <SolidColorBrush x:Key="Text" Color="#E8E9ED"/>
-    <SolidColorBrush x:Key="TextDim" Color="#8B909C"/>
-    <SolidColorBrush x:Key="Accent" Color="#5AA9FF"/>
-    <SolidColorBrush x:Key="AccentDim" Color="#2A4A6E"/>
-    <SolidColorBrush x:Key="Danger" Color="#FF6B6B"/>
-    <SolidColorBrush x:Key="Ok" Color="#5FD39A"/>
+    <!-- Палитра: светлая, фон непрозрачный -->
+    <SolidColorBrush x:Key="Bg" Color="#F6F6F3"/>
+    <SolidColorBrush x:Key="Card" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="CardHover" Color="#FBFBF9"/>
+    <SolidColorBrush x:Key="Input" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="Line" Color="#E2E2DD"/>
+    <SolidColorBrush x:Key="LineStrong" Color="#CDCDC6"/>
+    <SolidColorBrush x:Key="Hover" Color="#EDEDE8"/>
+    <SolidColorBrush x:Key="Text" Color="#1F1F1D"/>
+    <SolidColorBrush x:Key="TextDim" Color="#65655F"/>
+    <SolidColorBrush x:Key="TextMuted" Color="#A3A39C"/>
+    <SolidColorBrush x:Key="Accent" Color="#2F6FD6"/>
+    <SolidColorBrush x:Key="AccentBg" Color="#E3EEFB"/>
+    <SolidColorBrush x:Key="AccentText" Color="#1D58B3"/>
+    <SolidColorBrush x:Key="Danger" Color="#C23B3B"/>
+    <SolidColorBrush x:Key="Ok" Color="#2E8A57"/>
 
     <FontFamily x:Key="Mono">Cascadia Mono, Consolas</FontFamily>
     <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+    <local:BoolToVisConverter x:Key="Vis"/>
+    <local:EmptyToVisConverter x:Key="EmptyVis"/>
+    <local:StringEqualsConverter x:Key="TplIs"/>
 
     <!-- Кнопка-иконка -->
     <Style x:Key="IconButton" TargetType="Button">
@@ -37,11 +44,11 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="b" Property="Background" Value="#3A3F49"/>
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource Hover}"/>
                             <Setter Property="Foreground" Value="{StaticResource Text}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="b" Property="Background" Value="{StaticResource AccentDim}"/>
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource AccentBg}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -49,10 +56,11 @@
         </Setter>
     </Style>
 
-    <!-- Обычная кнопка с текстом -->
+    <!-- Обычная кнопка с текстом: контур -->
     <Style x:Key="TextButton" TargetType="Button">
         <Setter Property="Foreground" Value="{StaticResource Text}"/>
         <Setter Property="Background" Value="{StaticResource Card}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource LineStrong}"/>
         <Setter Property="Padding" Value="14,7"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="13"/>
@@ -60,6 +68,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="b" Background="{TemplateBinding Background}" CornerRadius="6"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
@@ -77,19 +86,70 @@
     </Style>
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
         <Setter Property="Background" Value="{StaticResource Accent}"/>
-        <Setter Property="Foreground" Value="#0E1A28"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+        <Setter Property="Foreground" Value="White"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
         <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
         <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+    </Style>
+    <!-- Текстовая ссылка-кнопка («+ Ещё поле») -->
+    <Style x:Key="LinkButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="b" Background="Transparent" CornerRadius="5" Padding="6,4">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource AccentBg}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Заготовка-переключатель: выбранная подсвечена -->
+    <Style x:Key="Chip" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Margin" Value="0,0,6,6"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="b" Background="Transparent" BorderBrush="{StaticResource LineStrong}"
+                            BorderThickness="1" CornerRadius="6" Padding="10,4">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource Hover}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource AccentBg}"/>
+                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource AccentBg}"/>
+                            <Setter Property="Foreground" Value="{StaticResource AccentText}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- Поля ввода -->
     <Style TargetType="TextBox">
         <Setter Property="Foreground" Value="{StaticResource Text}"/>
         <Setter Property="Background" Value="{StaticResource Input}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource LineStrong}"/>
         <Setter Property="CaretBrush" Value="{StaticResource Text}"/>
         <Setter Property="SelectionBrush" Value="{StaticResource Accent}"/>
         <Setter Property="Padding" Value="8,6"/>
@@ -114,7 +174,7 @@
     <Style TargetType="PasswordBox">
         <Setter Property="Foreground" Value="{StaticResource Text}"/>
         <Setter Property="Background" Value="{StaticResource Input}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource LineStrong}"/>
         <Setter Property="CaretBrush" Value="{StaticResource Text}"/>
         <Setter Property="SelectionBrush" Value="{StaticResource Accent}"/>
         <Setter Property="Padding" Value="8,6"/>
@@ -136,10 +196,13 @@
         </Setter>
     </Style>
 
-    <Style TargetType="CheckBox">
-        <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
-        <Setter Property="FontSize" Value="12"/>
-        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    <!-- Серая подсказка поверх пустого поля ввода -->
+    <Style x:Key="Placeholder" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+        <Setter Property="IsHitTestVisible" Value="False"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="10,0,0,0"/>
+        <Setter Property="FontSize" Value="13"/>
     </Style>
 
     <!-- Тонкая полоса прокрутки -->
@@ -155,10 +218,10 @@
                             <Thumb>
                                 <Thumb.Template>
                                     <ControlTemplate TargetType="Thumb">
-                                        <Border x:Name="t" Background="#4A4F5B" CornerRadius="3"/>
+                                        <Border x:Name="t" Background="#CFCFC8" CornerRadius="3"/>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="t" Property="Background" Value="#6A707D"/>
+                                                <Setter TargetName="t" Property="Background" Value="#A9A9A2"/>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -175,6 +238,4 @@
             </Trigger>
         </Style.Triggers>
     </Style>
-
-    <local:BoolToVisConverter x:Key="Vis"/>
 </ResourceDictionary>

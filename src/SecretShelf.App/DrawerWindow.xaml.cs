@@ -403,14 +403,84 @@ public partial class DrawerWindow : Window
         ShowPanel(ListPanel);
     }
 
-    private void Template_Click(object sender, RoutedEventArgs e) => _editor?.ApplyTemplate((string)((Button)sender).Tag);
+    private void Template_Click(object sender, RoutedEventArgs e) => _editor?.ApplyTemplate((string)((FrameworkElement)sender).Tag);
 
-    private void AddField_Click(object sender, RoutedEventArgs e) =>
-        _editor?.Fields.Add(new FieldDraftVm { Label = $"Поле {(_editor.Fields.Count + 1)}" });
+    private void AddField_Click(object sender, RoutedEventArgs e)
+    {
+        if (_editor == null) return;
+        var f = new FieldDraftVm { Label = $"Поле {_editor.Fields.Count + 1}", IsRenaming = true };
+        _editor.Fields.Add(f);
+    }
 
     private void RemoveField_Click(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).DataContext is FieldDraftVm f) _editor?.Fields.Remove(f);
+    }
+
+    // --- переименование поля: щелчок по подписи открывает поле ввода ---
+
+    private void FieldLabel_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is FieldDraftVm f) f.IsRenaming = true;
+    }
+
+    private void RenameBox_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        var tb = (TextBox)sender;
+        if (!tb.IsVisible) return;
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () => { tb.Focus(); tb.SelectAll(); });
+    }
+
+    private void RenameBox_LostFocus(object sender, KeyboardFocusChangedEventArgs e) => EndRename(sender);
+
+    private void RenameBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        EndRename(sender);
+        e.Handled = true;
+    }
+
+    private static void EndRename(object sender)
+    {
+        if (((FrameworkElement)sender).DataContext is not FieldDraftVm f) return;
+        if (string.IsNullOrWhiteSpace(f.Label)) f.Label = "Поле";
+        f.IsRenaming = false;
+    }
+
+    // --- меню поля «⋯» ---
+
+    private void FieldMenu_Click(object sender, RoutedEventArgs e)
+    {
+        var btn = (Button)sender;
+        var menu = btn.ContextMenu!;
+        menu.DataContext = btn.DataContext;
+        menu.PlacementTarget = btn;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private void FieldMenuRename_Click(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is FieldDraftVm f) f.IsRenaming = true;
+    }
+
+    private void FieldMenuUp_Click(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is FieldDraftVm f) _editor?.MoveField(f, -1);
+    }
+
+    private void FieldMenuDown_Click(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is FieldDraftVm f) _editor?.MoveField(f, +1);
+    }
+
+    /// <summary>Случайный пароль: 20 символов, криптостойкий генератор, без похожих символов (O/0, l/1).</summary>
+    private void Generate_Click(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is not FieldDraftVm f) return;
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_.!@#%";
+        f.Value = System.Security.Cryptography.RandomNumberGenerator.GetString(alphabet, 20);
+        f.IsRevealed = true; // показать, что пароль появился
     }
 
     private void DraftReveal_Click(object sender, RoutedEventArgs e)

@@ -97,6 +97,7 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type local:EntryVm}">
                                 <Border x:Name="CardBorder" Background="{StaticResource Card}" CornerRadius="8"
+                                        BorderBrush="{StaticResource Line}" BorderThickness="1"
                                         Margin="0,0,0,8" Padding="4,8,8,8">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -108,7 +109,7 @@
                                                 VerticalAlignment="Top" Height="24"
                                                 PreviewMouseLeftButtonDown="DragHandle_MouseDown">
                                             <TextBlock Text="&#xE784;" FontFamily="{StaticResource Icons}" FontSize="12"
-                                                       Foreground="#5A606C" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                                       Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1">
                                             <Grid Margin="2,0,0,4">
@@ -165,13 +166,12 @@
                                 </Border>
                                 <DataTemplate.Triggers>
                                     <Trigger SourceName="CardBorder" Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="CardBorder" Property="Background" Value="{StaticResource CardHover}"/>
+                                        <Setter TargetName="CardBorder" Property="BorderBrush" Value="{StaticResource LineStrong}"/>
                                         <Setter TargetName="EditButton" Property="Opacity" Value="1"/>
                                     </Trigger>
                                     <DataTrigger Binding="{Binding IsDragging}" Value="True">
                                         <Setter TargetName="CardBorder" Property="Opacity" Value="0.45"/>
                                         <Setter TargetName="CardBorder" Property="BorderBrush" Value="{StaticResource Accent}"/>
-                                        <Setter TargetName="CardBorder" Property="BorderThickness" Value="1"/>
                                     </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
@@ -190,89 +190,117 @@
                     </Grid.RowDefinitions>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,0,10,0">
                         <StackPanel Margin="0,0,4,10">
-                            <TextBlock Text="{Binding Header}" FontSize="16" FontWeight="SemiBold" Margin="0,4,0,12"/>
-                            <TextBlock Text="Название" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,0,0,4"/>
-                            <TextBox x:Name="EditorTitle" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="{Binding Header}" FontSize="16" FontWeight="SemiBold" Margin="0,4,0,10"/>
 
-                            <StackPanel Visibility="{Binding IsNew, Converter={StaticResource Vis}}" Margin="0,12,0,0">
-                                <TextBlock Text="Заготовка" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,0,0,4"/>
-                                <WrapPanel>
-                                    <WrapPanel.Resources>
-                                        <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                            <Setter Property="Padding" Value="10,5"/>
-                                            <Setter Property="Margin" Value="0,0,6,6"/>
-                                            <Setter Property="FontSize" Value="12"/>
-                                        </Style>
-                                    </WrapPanel.Resources>
-                                    <Button Content="Логин + пароль" Tag="login" Click="Template_Click"/>
-                                    <Button Content="API-ключ" Tag="api" Click="Template_Click"/>
-                                    <Button Content="Сервер + SSH" Tag="server" Click="Template_Click"/>
-                                    <Button Content="Пустая" Tag="blank" Click="Template_Click"/>
-                                </WrapPanel>
-                            </StackPanel>
+                            <Grid>
+                                <TextBox x:Name="EditorTitle" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" FontSize="15"/>
+                                <TextBlock Style="{StaticResource Placeholder}" FontSize="15" Text="Почта Яндекс"
+                                           Visibility="{Binding Title, Converter={StaticResource EmptyVis}}"/>
+                            </Grid>
+                            <TextBlock Text="Название — так запись будет подписана в списке" FontSize="11.5"
+                                       Foreground="{StaticResource TextMuted}" Margin="2,4,0,12"/>
 
-                            <TextBlock Text="Поля" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,12,0,4"/>
+                            <WrapPanel Visibility="{Binding IsNew, Converter={StaticResource Vis}}" Margin="0,0,0,8">
+                                <RadioButton Style="{StaticResource Chip}" Content="Логин и пароль" Tag="login" Click="Template_Click"
+                                             IsChecked="{Binding Template, Mode=OneWay, Converter={StaticResource TplIs}, ConverterParameter=login}"/>
+                                <RadioButton Style="{StaticResource Chip}" Content="API-ключ" Tag="api" Click="Template_Click"
+                                             IsChecked="{Binding Template, Mode=OneWay, Converter={StaticResource TplIs}, ConverterParameter=api}"/>
+                                <RadioButton Style="{StaticResource Chip}" Content="Сервер" Tag="server" Click="Template_Click"
+                                             IsChecked="{Binding Template, Mode=OneWay, Converter={StaticResource TplIs}, ConverterParameter=server}"/>
+                                <RadioButton Style="{StaticResource Chip}" Content="Своё" Tag="custom" Click="Template_Click"
+                                             IsChecked="{Binding Template, Mode=OneWay, Converter={StaticResource TplIs}, ConverterParameter=custom}"/>
+                            </WrapPanel>
+
+                            <!-- Поля: строка «название — значение» -->
                             <ItemsControl ItemsSource="{Binding Fields}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type local:FieldDraftVm}">
-                                        <Border Background="{StaticResource Card}" CornerRadius="8" Padding="8" Margin="0,0,0,8">
-                                            <StackPanel>
-                                                <Grid Margin="0,0,0,6">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}"
-                                                             FontSize="12" Padding="6,4" ToolTip="Название поля"/>
-                                                    <CheckBox Grid.Column="1" Content="секрет" Margin="10,0,4,0"
-                                                              IsChecked="{Binding IsSecret}"/>
-                                                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="&#xE711;"
-                                                            Width="26" Height="26" FontSize="11" ToolTip="Убрать поле"
-                                                            Click="RemoveField_Click"/>
-                                                </Grid>
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
-                                                             FontFamily="{StaticResource Mono}" FontSize="12"
-                                                             AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
-                                                             Visibility="{Binding ShowPlain, Converter={StaticResource Vis}}"/>
-                                                    <PasswordBox FontFamily="{StaticResource Mono}" FontSize="12"
-                                                                 Visibility="{Binding ShowPlain, Converter={StaticResource Vis}, ConverterParameter=not}"
-                                                                 Loaded="DraftPassword_Loaded" IsVisibleChanged="DraftPassword_IsVisibleChanged"
-                                                                 PasswordChanged="DraftPassword_PasswordChanged"/>
-                                                    <Button Grid.Column="1" Style="{StaticResource IconButton}" Width="28" Height="28"
-                                                            FontSize="12" Margin="4,0,0,0" VerticalAlignment="Top"
-                                                            ToolTip="Показать / скрыть" Click="DraftReveal_Click"
-                                                            Visibility="{Binding IsSecret, Converter={StaticResource Vis}}">
-                                                        <TextBlock>
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Setter Property="Text" Value="&#xE890;"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsRevealed}" Value="True">
-                                                                            <Setter Property="Text" Value="&#xED1A;"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                        </TextBlock>
-                                                    </Button>
-                                                </Grid>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="96"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="82"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- подпись поля; щелчок — переименовать -->
+                                            <Border Background="Transparent" Cursor="Hand" VerticalAlignment="Top" Height="31"
+                                                    ToolTip="Переименовать поле" MouseLeftButtonUp="FieldLabel_Click"
+                                                    Visibility="{Binding IsRenaming, Converter={StaticResource Vis}, ConverterParameter=not}">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Label}" Foreground="{StaticResource TextDim}" FontSize="13"
+                                                               TextTrimming="CharacterEllipsis" MaxWidth="76"/>
+                                                    <TextBlock Text="&#xE70F;" FontFamily="{StaticResource Icons}" FontSize="10"
+                                                               Foreground="{StaticResource TextMuted}" Margin="5,1,0,0"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" FontSize="12.5" Padding="6,5"
+                                                     Margin="0,0,6,0" VerticalAlignment="Top"
+                                                     Visibility="{Binding IsRenaming, Converter={StaticResource Vis}}"
+                                                     IsVisibleChanged="RenameBox_IsVisibleChanged"
+                                                     LostKeyboardFocus="RenameBox_LostFocus" KeyDown="RenameBox_KeyDown"/>
+
+                                            <!-- значение -->
+                                            <Grid Grid.Column="1">
+                                                <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                         FontFamily="{StaticResource Mono}" FontSize="12.5"
+                                                         AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
+                                                         Visibility="{Binding ShowPlain, Converter={StaticResource Vis}}"/>
+                                                <PasswordBox FontFamily="{StaticResource Mono}" FontSize="12.5"
+                                                             Visibility="{Binding ShowPlain, Converter={StaticResource Vis}, ConverterParameter=not}"
+                                                             Loaded="DraftPassword_Loaded" IsVisibleChanged="DraftPassword_IsVisibleChanged"
+                                                             PasswordChanged="DraftPassword_PasswordChanged"/>
+                                                <TextBlock Style="{StaticResource Placeholder}" Text="{Binding Placeholder}"
+                                                           VerticalAlignment="Top" Margin="10,7,0,0"
+                                                           Visibility="{Binding Value, Converter={StaticResource EmptyVis}}"/>
+                                            </Grid>
+
+                                            <!-- действия -->
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="2,1,0,0">
+                                                <Button Style="{StaticResource IconButton}" Width="26" Height="29" FontSize="13"
+                                                        ToolTip="Показать / скрыть" Click="DraftReveal_Click"
+                                                        Visibility="{Binding IsSecret, Converter={StaticResource Vis}}">
+                                                    <TextBlock>
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="&#xE890;"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsRevealed}" Value="True">
+                                                                        <Setter Property="Text" Value="&#xED1A;"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Button>
+                                                <Button Style="{StaticResource IconButton}" Width="26" Height="29" FontSize="13"
+                                                        Content="&#xE8B1;" ToolTip="Сгенерировать случайный пароль" Click="Generate_Click"
+                                                        Visibility="{Binding IsSecret, Converter={StaticResource Vis}}"/>
+                                                <Button Style="{StaticResource IconButton}" Width="26" Height="29" FontSize="13"
+                                                        Content="&#xE712;" ToolTip="Ещё: переименовать, скрывать, порядок, убрать"
+                                                        Click="FieldMenu_Click">
+                                                    <Button.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Переименовать" Click="FieldMenuRename_Click"/>
+                                                            <MenuItem Header="Скрывать значение" IsCheckable="True"
+                                                                      IsChecked="{Binding IsSecret}"/>
+                                                            <Separator/>
+                                                            <MenuItem Header="Выше" Click="FieldMenuUp_Click"/>
+                                                            <MenuItem Header="Ниже" Click="FieldMenuDown_Click"/>
+                                                            <Separator/>
+                                                            <MenuItem Header="Убрать поле" Click="RemoveField_Click"/>
+                                                        </ContextMenu>
+                                                    </Button.ContextMenu>
+                                                </Button>
                                             </StackPanel>
-                                        </Border>
+                                        </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <Button Style="{StaticResource TextButton}" HorizontalAlignment="Left" Padding="10,5"
-                                    FontSize="12" Click="AddField_Click">
+                            <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Click="AddField_Click">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="11"
                                                VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                    <TextBlock Text="Добавить поле"/>
+                                    <TextBlock Text="Ещё поле"/>
                                 </StackPanel>
                             </Button>
                             <TextBlock x:Name="EditorError" Foreground="{StaticResource Danger}" FontSize="12"
@@ -292,7 +320,7 @@
                             <TextBlock>
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="Удалить"/>
+                                        <Setter Property="Text" Value="Удалить запись"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding ConfirmDelete}" Value="True">
                                                 <Setter Property="Text" Value="Точно удалить?"/>
@@ -329,7 +357,7 @@
                 <!-- ===== Меню (шестерёнка) ===== -->
                 <Popup x:Name="MenuPopup" PlacementTarget="{Binding ElementName=MenuButton}" Placement="Top"
                        StaysOpen="False" AllowsTransparency="True" VerticalOffset="-4">
-                    <Border Background="#2A2D34" CornerRadius="8" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                    <Border Background="{StaticResource Card}" CornerRadius="8" BorderBrush="{StaticResource Line}" BorderThickness="1"
                             Padding="4" MinWidth="200">
                         <StackPanel>
                             <StackPanel.Resources>
@@ -344,7 +372,7 @@
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="b" Property="Background" Value="#3A3F49"/>
+                                                        <Setter TargetName="b" Property="Background" Value="{StaticResource Hover}"/>
                                                     </Trigger>
                                                     <Trigger Property="IsEnabled" Value="False">
                                                         <Setter TargetName="b" Property="Opacity" Value="0.4"/>
