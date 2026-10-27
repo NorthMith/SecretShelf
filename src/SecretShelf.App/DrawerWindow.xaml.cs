@@ -9,15 +9,17 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using SecretShelf.App.Services;
 using SecretShelf.Core;
 
 namespace SecretShelf.App;
 
 /// <summary>
 /// Шторка у правого края экрана: создание хранилища, отпирание, список записей
-/// с перетаскиванием, редактор записи.
+/// с перетаскиванием, редактор записи, настройки. Здесь же живут службы
+/// (трей, горячая клавиша, автоблокировка): шторка — единственное окно приложения.
 /// </summary>
-public partial class DrawerWindow : Window
+public partial class DrawerWindow : Window, ISettingsHost
 {
     private readonly AppSettings _settings;
     private readonly SecureClipboard _clipboard = new();
@@ -25,6 +27,10 @@ public partial class DrawerWindow : Window
     private readonly ObservableCollection<EntryVm> _entries = new();
     private readonly ICollectionView _view;
     private readonly PeekWindow _peek = new();
+    private readonly TrayIcon _tray = new();
+    private readonly GlobalHotkey _hotkey = new();
+    private readonly AutoLock _autoLock;
+    private int _slideToken; // защищает от наложения анимаций выезда и уезда
 
     private Vault? _vault;
     private EditorVm? _editor;
@@ -50,7 +56,38 @@ public partial class DrawerWindow : Window
         _clipboard.Countdown += left => { _clipboardLeft = left; UpdateStatus(); };
         _peek.ExpandRequested += (_, _) => Expand();
 
-        Loaded += (_, _) => { PlaceAtRightEdge(); ShowStartPanel(); };
+        _tray.ToggleRequested += (_, _) => Toggle();
+        _tray.OpenRequested += (_, _) => Expand();
+        _tray.LockRequested += async (_, _) => await LockAsync();
+        _tray.SettingsRequested += (_, _) => OpenSettings();
+        _tray.ExitRequested += async (_, _) => await ExitAsync();
+        _hotkey.Pressed += (_, _) => Toggle();
+        _autoLock = new AutoLock(settings);
+        _autoLock.LockRequested += async (_, reason) =>
+        {
+            if (_vault == null) return;
+            await LockAsync();
+            _saveStatus = $"Заблокировано: {reason}";
+            UpdateStatus();
+        };
+        Deactivated += (_, _) =>
+        {
+            if (_settings.HideOnDeactivate && IsVisible && _editor == null && !SettingsPanel.IsCapturing)
+                CollapseDrawer();
+        };
+
+        Loaded += (_, _) =>
+        {
+            PlaceAtRightEdge();
+            FirstRunDefaults();
+            ApplySettings();
+            if (!_hotkey.TrySet(_settings.Hotkey))
+            {
+                _saveStatus = $"Горячая клавиша {_settings.Hotkey} занята — выберите другую в настройках";
+                UpdateStatus();
+            }
+            ShowStartPanel();
+        };
         SystemParameters.StaticPropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SystemParameters.WorkArea)) { PlaceAtRightEdge(); _peek.PlaceAtCorner(); }
@@ -67,9 +104,10 @@ public partial class DrawerWindow : Window
         Left = wa.Right - Width;
     }
 
-    /// <summary>Показать шторку (из язычка, из второго запуска приложения).</summary>
+    /// <summary>Показать шторку (из язычка, трея, горячей клавиши, второго запуска).</summary>
     public void Expand()
     {
+        _slideToken++;
         _peek.Hide();
         PlaceAtRightEdge();
         if (!IsVisible) Show();
@@ -81,15 +119,24 @@ public partial class DrawerWindow : Window
 
     private void CollapseDrawer()
     {
-        MenuPopup.IsOpen = false;
+        if (!IsVisible) return;
+        int token = ++_slideToken;
         var anim = new DoubleAnimation(0, Width, TimeSpan.FromMilliseconds(170)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
         anim.Completed += (_, _) =>
         {
+            if (token != _slideToken) return; // пока уезжала, её позвали обратно
             Hide();
             Slide.BeginAnimation(TranslateTransform.XProperty, null);
-            _peek.ShowAtCorner();
+            if (_settings.ShowPeekTab) _peek.ShowAtCorner();
         };
         Slide.BeginAnimation(TranslateTransform.XProperty, anim);
+    }
+
+    /// <summary>Горячая клавиша и левый щелчок по значку в трее.</summary>
+    public void Toggle()
+    {
+        if (IsVisible) CollapseDrawer();
+        else Expand();
     }
 
     private void Collapse_Click(object sender, RoutedEventArgs e) => CollapseDrawer();
@@ -97,7 +144,12 @@ public partial class DrawerWindow : Window
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Escape) return;
-        if (_editor != null) CloseEditor();
+        if (SettingsPanel.IsVisible)
+        {
+            if (SettingsPanel.IsCapturing) return; // Esc отменяет захват сочетания
+            CloseSettings();
+        }
+        else if (_editor != null) CloseEditor();
         else if (SearchText.Text.Length > 0) SearchText.Text = "";
         else CollapseDrawer();
         e.Handled = true;
@@ -117,15 +169,17 @@ public partial class DrawerWindow : Window
 
     private void ShowPanel(FrameworkElement panel)
     {
-        foreach (var p in new FrameworkElement[] { SetupPanel, LockPanel, ListPanel, EditorPanel })
+        foreach (var p in new FrameworkElement[] { SetupPanel, LockPanel, ListPanel, EditorPanel, SettingsPanel })
             p.Visibility = p == panel ? Visibility.Visible : Visibility.Collapsed;
 
-        bool unlocked = panel == ListPanel || panel == EditorPanel;
-        Footer.Visibility = panel == EditorPanel ? Visibility.Collapsed : Visibility.Visible;
-        AddButton.Visibility = panel == ListPanel ? Visibility.Visible : Visibility.Collapsed;
-        SearchBox.Visibility = panel == ListPanel ? Visibility.Visible : Visibility.Collapsed;
-        CaptionText.Visibility = panel == ListPanel ? Visibility.Collapsed : Visibility.Visible;
-        LockMenuItem.IsEnabled = unlocked;
+        bool unlocked = panel == ListPanel || panel == EditorPanel || panel == SettingsPanel;
+        bool list = panel == ListPanel;
+        Footer.Visibility = list || panel == SetupPanel || panel == LockPanel ? Visibility.Visible : Visibility.Collapsed;
+        MenuButton.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
+        AddButton.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
+        SearchBox.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
+        CaptionText.Visibility = list ? Visibility.Collapsed : Visibility.Visible;
+        _tray.SetUnlocked(unlocked);
         FocusDefault();
     }
 
@@ -212,14 +266,13 @@ public partial class DrawerWindow : Window
     {
         _vault = vault;
         _vault.Changed += (_, _) => Dispatcher.BeginInvoke(() => { _saveDebounce.Stop(); _saveDebounce.Start(); });
-        KdfInfo.Text = "Защита: " + vault.DescribeKdf();
         _saveStatus = "";
         ReloadEntries();
         ShowPanel(ListPanel);
     }
 
     /// <summary>Блокировка: сохранить, очистить буфер, забыть всё расшифрованное.</summary>
-    private async Task LockAsync()
+    public async Task LockAsync()
     {
         if (_vault == null) return;
         if (_editor != null) CloseEditor();
@@ -590,37 +643,84 @@ public partial class DrawerWindow : Window
         StatusText.ToolTip = _saveStatus;
     }
 
-    // =============== меню ===============
+    // =============== настройки (ISettingsHost) ===============
 
-    private void Menu_Click(object sender, RoutedEventArgs e) => MenuPopup.IsOpen = !MenuPopup.IsOpen;
+    public AppSettings Settings => _settings;
 
-    private async void LockMenu_Click(object sender, RoutedEventArgs e)
+    public string KdfDescription => _vault?.DescribeKdf() ?? "";
+
+    private void Menu_Click(object sender, RoutedEventArgs e) => OpenSettings();
+
+    /// <summary>Настройки открываются только при открытом хранилище.</summary>
+    public void OpenSettings()
     {
-        MenuPopup.IsOpen = false;
-        await LockAsync();
+        if (!IsVisible) Expand();
+        if (_vault == null) return;
+        if (_editor != null) CloseEditor();
+        SettingsPanel.Load(this);
+        ShowPanel(SettingsPanel);
     }
 
-    private void OpenFolder_Click(object sender, RoutedEventArgs e)
+    public void CloseSettings() => ShowPanel(_vault != null ? ListPanel : LockPanel);
+
+    /// <summary>Автозапуск включается один раз — при первом запуске приложения.</summary>
+    private void FirstRunDefaults()
     {
-        MenuPopup.IsOpen = false;
+        if (_settings.AutostartInitialized) return;
+        try { Autostart.Set(true); } catch (Exception) { /* не вышло — переключатель в настройках покажет */ }
+        _settings.AutostartInitialized = true;
+        _settings.Save();
+    }
+
+    public void ApplySettings()
+    {
+        _tray.Visible = _settings.ShowTrayIcon;
+        if (!_settings.ShowPeekTab) _peek.Hide();
+        else if (!IsVisible) _peek.ShowAtCorner();
+        try { _settings.Save(); }
+        catch (Exception ex) { _saveStatus = "Настройки не сохранились: " + ex.Message; UpdateStatus(); }
+    }
+
+    public bool TryApplyHotkey(string gesture) => _hotkey.TrySet(gesture);
+
+    public async Task<string?> ChangePasswordAsync(string oldPassword, string newPassword)
+    {
+        if (_vault == null) return "Хранилище заблокировано.";
+        var vault = _vault;
+        await _saveTask;
+        try
+        {
+            await Task.Run(() => vault.ChangePassword(oldPassword, newPassword));
+            return null;
+        }
+        catch (WrongPasswordException) { return "Текущий пароль неверный."; }
+        catch (Exception ex) { return "Не удалось сменить пароль: " + ex.Message; }
+    }
+
+    public void OpenVaultFolder()
+    {
         string dir = Path.GetDirectoryName(Path.GetFullPath(_settings.VaultPath))!;
         Directory.CreateDirectory(dir);
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
     }
 
-    private async void Exit_Click(object sender, RoutedEventArgs e)
-    {
-        MenuPopup.IsOpen = false;
-        await ExitAsync();
-    }
+    private async void ExitLink_Click(object sender, RoutedEventArgs e) => await ExitAsync();
 
     public async Task ExitAsync()
     {
         if (_exiting) return;
         _exiting = true;
         await LockAsync();
+        DisposeServices();
         _peek.Close();
         Application.Current.Shutdown();
+    }
+
+    private void DisposeServices()
+    {
+        _autoLock.Dispose();
+        _hotkey.Dispose();
+        _tray.Dispose(); // иначе значок висит в трее до наведения мыши
     }
 
     /// <summary>Синхронное сохранение при выходе из Windows.</summary>
@@ -630,6 +730,7 @@ public partial class DrawerWindow : Window
         try { _saveTask.Wait(TimeSpan.FromSeconds(5)); } catch (AggregateException) { }
         _vault?.Dispose();
         _vault = null;
+        DisposeServices();
     }
 
     protected override void OnClosing(CancelEventArgs e)

@@ -102,6 +102,25 @@ public sealed class VaultTests : IDisposable
     }
 
     [Fact]
+    public void Change_password_needs_old_and_makes_backup()
+    {
+        using (var v = Vault.Create(VaultPath, "old-pass", kdfTargetMs: 50))
+        {
+            v.AddEntry("A", new[] { F("x", "1") });
+            v.SaveIfDirty();
+            Assert.Throws<WrongPasswordException>(() => v.ChangePassword("not-it", "new-pass"));
+            v.ChangePassword("old-pass", "new-pass");
+        }
+        Assert.Throws<WrongPasswordException>(() => Vault.Open(VaultPath, "old-pass"));
+        using var r = Vault.Open(VaultPath, "new-pass");
+        Assert.Equal(new[] { "A" }, r.GetEntries().Select(e => e.Title));
+        // Копия со старым паролем лежит в backups — откат возможен.
+        var backups = Directory.GetFiles(Path.Combine(_dir, "backups"), "vault.bak-*.kdbx");
+        Assert.NotEmpty(backups);
+        Vault.Open(backups.OrderBy(b => b).Last(), "old-pass").Dispose();
+    }
+
+    [Fact]
     public void Kdf_calibration_hits_target_roughly()
     {
         // Замер на этой машине: сколько реально идёт открытие при цели 400 мс.

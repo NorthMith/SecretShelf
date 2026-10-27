@@ -73,6 +73,10 @@
                                FontSize="12" Margin="0,8,0,0"/>
                     <Button x:Name="UnlockButton" Style="{StaticResource PrimaryButton}" Content="Открыть"
                             Margin="0,10,0,0" Click="Unlock_Click"/>
+                    <Button Style="{StaticResource LinkButton}" Foreground="{StaticResource TextDim}"
+                            HorizontalAlignment="Center" Margin="0,18,0,0" Click="ExitLink_Click">
+                        <TextBlock Text="Выйти из SecretShelf"/>
+                    </Button>
                 </StackPanel>
 
                 <!-- ===== Список ===== -->
@@ -338,6 +342,9 @@
                     </Grid>
                 </Grid>
 
+                <!-- ===== Настройки ===== -->
+                <local:SettingsView x:Name="SettingsPanel" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed"/>
+
                 <!-- ===== Подвал ===== -->
                 <Grid x:Name="Footer" Grid.Row="2" Margin="10,6,10,10">
                     <Grid.ColumnDefinitions>
@@ -346,7 +353,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <Button x:Name="MenuButton" Style="{StaticResource IconButton}" Content="&#xE713;" Width="34" Height="34"
-                            FontSize="16" ToolTip="Меню" Click="Menu_Click"/>
+                            FontSize="16" ToolTip="Настройки" Click="Menu_Click"/>
                     <TextBlock x:Name="StatusText" Grid.Column="1" FontSize="11.5" Foreground="{StaticResource TextDim}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                     <Button x:Name="AddButton" Grid.Column="2" Style="{StaticResource IconButton}" Content="&#xE710;"
@@ -354,65 +361,6 @@
                             ToolTip="Добавить запись" Click="Add_Click" Visibility="Collapsed"/>
                 </Grid>
 
-                <!-- ===== Меню (шестерёнка) ===== -->
-                <Popup x:Name="MenuPopup" PlacementTarget="{Binding ElementName=MenuButton}" Placement="Top"
-                       StaysOpen="False" AllowsTransparency="True" VerticalOffset="-4">
-                    <Border Background="{StaticResource Card}" CornerRadius="8" BorderBrush="{StaticResource Line}" BorderThickness="1"
-                            Padding="4" MinWidth="200">
-                        <StackPanel>
-                            <StackPanel.Resources>
-                                <Style TargetType="Button">
-                                    <Setter Property="Foreground" Value="{StaticResource Text}"/>
-                                    <Setter Property="Cursor" Value="Hand"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border x:Name="b" Background="Transparent" CornerRadius="5" Padding="10,7">
-                                                    <ContentPresenter/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="b" Property="Background" Value="{StaticResource Hover}"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsEnabled" Value="False">
-                                                        <Setter TargetName="b" Property="Opacity" Value="0.4"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </StackPanel.Resources>
-                            <Button x:Name="LockMenuItem" Click="LockMenu_Click">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE72E;" FontFamily="{StaticResource Icons}" Width="24" VerticalAlignment="Center"/>
-                                    <TextBlock Text="Заблокировать"/>
-                                </StackPanel>
-                            </Button>
-                            <Button Click="OpenFolder_Click">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE838;" FontFamily="{StaticResource Icons}" Width="24" VerticalAlignment="Center"/>
-                                    <TextBlock Text="Папка хранилища"/>
-                                </StackPanel>
-                            </Button>
-                            <Button IsEnabled="False" ToolTip="Заход 2: способ отпирания, вызов шторки, автоблокировка">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" Width="24" VerticalAlignment="Center"/>
-                                    <TextBlock Text="Настройки (скоро)"/>
-                                </StackPanel>
-                            </Button>
-                            <TextBlock x:Name="KdfInfo" Foreground="{StaticResource TextDim}" FontSize="11"
-                                       Margin="10,4,10,4" TextWrapping="Wrap" MaxWidth="230"/>
-                            <Border Height="1" Background="{StaticResource Line}" Margin="4,2"/>
-                            <Button Click="Exit_Click">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE7E8;" FontFamily="{StaticResource Icons}" Width="24" VerticalAlignment="Center"/>
-                                    <TextBlock Text="Выход"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </Border>
-                </Popup>
             </Grid>
         </Border>
     </Grid>
