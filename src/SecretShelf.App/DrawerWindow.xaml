@@ -1,0 +1,391 @@
+<Window x:Class="SecretShelf.App.DrawerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SecretShelf.App"
+        Title="SecretShelf" Width="360" Height="800"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" Topmost="True" ShowInTaskbar="False"
+        FontFamily="Segoe UI" Foreground="{StaticResource Text}"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Grid x:Name="Root">
+        <Grid.RenderTransform>
+            <TranslateTransform x:Name="Slide"/>
+        </Grid.RenderTransform>
+
+        <Border Background="{StaticResource Bg}" CornerRadius="12,0,0,12"
+                BorderBrush="{StaticResource Line}" BorderThickness="1,1,0,1"
+                TextElement.Foreground="{StaticResource Text}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- ===== Шапка ===== -->
+                <Grid Margin="10,10,12,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Style="{StaticResource IconButton}" Content="&#xE76C;" ToolTip="Свернуть шторку (Esc)"
+                            Click="Collapse_Click"/>
+                    <TextBlock x:Name="CaptionText" Grid.Column="1" Text="SecretShelf" FontSize="15" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    <Grid x:Name="SearchBox" Grid.Column="1" Margin="6,0,0,0" Visibility="Collapsed">
+                        <TextBox x:Name="SearchText" Padding="28,6,8,6" TextChanged="SearchText_TextChanged"/>
+                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource Icons}" Foreground="{StaticResource TextDim}"
+                                   VerticalAlignment="Center" Margin="10,0,0,0" IsHitTestVisible="False"/>
+                        <TextBlock Text="Поиск" Foreground="{StaticResource TextDim}" VerticalAlignment="Center"
+                                   Margin="29,0,0,0" IsHitTestVisible="False" x:Name="SearchHint"/>
+                    </Grid>
+                </Grid>
+
+                <!-- ===== Создание хранилища ===== -->
+                <StackPanel x:Name="SetupPanel" Grid.Row="1" Margin="22,30,22,0" Visibility="Collapsed">
+                    <TextBlock Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="34"
+                               Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Новое хранилище" FontSize="18" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" Margin="0,12,0,6"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextDim}" FontSize="12.5" Margin="0,0,0,18"
+                               Text="Задайте мастер-пароль. Восстановить его нельзя: забыли пароль — данные не открыть. Быстрый вход по отпечатку и ПИН-коду появится в настройках поверх пароля."/>
+                    <TextBlock Text="Пароль" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,0,0,4"/>
+                    <PasswordBox x:Name="SetupPass1"/>
+                    <TextBlock Text="Ещё раз" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,10,0,4"/>
+                    <PasswordBox x:Name="SetupPass2" KeyDown="SetupPass_KeyDown"/>
+                    <TextBlock x:Name="SetupError" Foreground="{StaticResource Danger}" TextWrapping="Wrap"
+                               FontSize="12" Margin="0,8,0,0"/>
+                    <Button x:Name="SetupButton" Style="{StaticResource PrimaryButton}" Content="Создать хранилище"
+                            Margin="0,14,0,0" Click="Setup_Click"/>
+                    <TextBlock x:Name="SetupPathText" Foreground="{StaticResource TextDim}" FontSize="11"
+                               TextWrapping="Wrap" Margin="0,16,0,0"/>
+                </StackPanel>
+
+                <!-- ===== Заблокировано ===== -->
+                <StackPanel x:Name="LockPanel" Grid.Row="1" Margin="22,60,22,0" Visibility="Collapsed">
+                    <TextBlock Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="34"
+                               Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Хранилище заблокировано" FontSize="17" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" Margin="0,12,0,18"/>
+                    <PasswordBox x:Name="UnlockPass" KeyDown="UnlockPass_KeyDown"/>
+                    <TextBlock x:Name="UnlockError" Foreground="{StaticResource Danger}" TextWrapping="Wrap"
+                               FontSize="12" Margin="0,8,0,0"/>
+                    <Button x:Name="UnlockButton" Style="{StaticResource PrimaryButton}" Content="Открыть"
+                            Margin="0,10,0,0" Click="Unlock_Click"/>
+                </StackPanel>
+
+                <!-- ===== Список ===== -->
+                <Grid x:Name="ListPanel" Grid.Row="1" Visibility="Collapsed">
+                    <ListBox x:Name="EntryList" Background="Transparent" BorderThickness="0" Padding="10,2,6,2"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.ScrollUnit="Pixel" AllowDrop="True"
+                             PreviewMouseMove="EntryList_PreviewMouseMove"
+                             DragOver="EntryList_DragOver" Drop="EntryList_Drop">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Focusable" Value="False"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter/>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type local:EntryVm}">
+                                <Border x:Name="CardBorder" Background="{StaticResource Card}" CornerRadius="8"
+                                        Margin="0,0,0,8" Padding="4,8,8,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="20"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <!-- ручка перетаскивания -->
+                                        <Border Background="Transparent" Cursor="SizeAll" ToolTip="Перетащите, чтобы поменять порядок"
+                                                VerticalAlignment="Top" Height="24"
+                                                PreviewMouseLeftButtonDown="DragHandle_MouseDown">
+                                            <TextBlock Text="&#xE784;" FontFamily="{StaticResource Icons}" FontSize="12"
+                                                       Foreground="#5A606C" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1">
+                                            <Grid Margin="2,0,0,4">
+                                                <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                           Margin="0,0,30,0"/>
+                                                <Button x:Name="EditButton" Style="{StaticResource IconButton}" Content="&#xE70F;"
+                                                        Width="26" Height="24" FontSize="12" HorizontalAlignment="Right"
+                                                        ToolTip="Изменить" Click="Edit_Click" Opacity="0"/>
+                                            </Grid>
+                                            <ItemsControl ItemsSource="{Binding Fields}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type local:FieldVm}">
+                                                        <Grid Margin="2,1,0,1">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="92"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="{Binding Label}" Foreground="{StaticResource TextDim}"
+                                                                       FontSize="12" VerticalAlignment="Center"
+                                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding Display}" FontFamily="{StaticResource Mono}"
+                                                                       FontSize="12.5" VerticalAlignment="Center" Cursor="Hand"
+                                                                       TextTrimming="CharacterEllipsis" Margin="4,0"
+                                                                       ToolTip="Щелчок — скопировать"
+                                                                       MouseLeftButtonUp="FieldValue_Click"/>
+                                                            <Button Grid.Column="2" Style="{StaticResource IconButton}" Width="26" Height="24"
+                                                                    FontSize="12" ToolTip="Показать / скрыть" Click="Reveal_Click"
+                                                                    Visibility="{Binding IsSecret, Converter={StaticResource Vis}}">
+                                                                <TextBlock>
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Text" Value="&#xE890;"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding IsRevealed}" Value="True">
+                                                                                    <Setter Property="Text" Value="&#xED1A;"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Button>
+                                                            <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE8C8;"
+                                                                    Width="26" Height="24" FontSize="12" ToolTip="Скопировать"
+                                                                    Click="Copy_Click"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <Trigger SourceName="CardBorder" Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="CardBorder" Property="Background" Value="{StaticResource CardHover}"/>
+                                        <Setter TargetName="EditButton" Property="Opacity" Value="1"/>
+                                    </Trigger>
+                                    <DataTrigger Binding="{Binding IsDragging}" Value="True">
+                                        <Setter TargetName="CardBorder" Property="Opacity" Value="0.45"/>
+                                        <Setter TargetName="CardBorder" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                        <Setter TargetName="CardBorder" Property="BorderThickness" Value="1"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock x:Name="EmptyHint" TextWrapping="Wrap" TextAlignment="Center" Margin="30,60,30,0"
+                               Foreground="{StaticResource TextDim}" Visibility="Collapsed"
+                               Text="Пока пусто. Нажмите «+» внизу справа, чтобы добавить первую запись."/>
+                </Grid>
+
+                <!-- ===== Редактор записи ===== -->
+                <Grid x:Name="EditorPanel" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,0,10,0">
+                        <StackPanel Margin="0,0,4,10">
+                            <TextBlock Text="{Binding Header}" FontSize="16" FontWeight="SemiBold" Margin="0,4,0,12"/>
+                            <TextBlock Text="Название" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,0,0,4"/>
+                            <TextBox x:Name="EditorTitle" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <StackPanel Visibility="{Binding IsNew, Converter={StaticResource Vis}}" Margin="0,12,0,0">
+                                <TextBlock Text="Заготовка" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,0,0,4"/>
+                                <WrapPanel>
+                                    <WrapPanel.Resources>
+                                        <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
+                                            <Setter Property="Padding" Value="10,5"/>
+                                            <Setter Property="Margin" Value="0,0,6,6"/>
+                                            <Setter Property="FontSize" Value="12"/>
+                                        </Style>
+                                    </WrapPanel.Resources>
+                                    <Button Content="Логин + пароль" Tag="login" Click="Template_Click"/>
+                                    <Button Content="API-ключ" Tag="api" Click="Template_Click"/>
+                                    <Button Content="Сервер + SSH" Tag="server" Click="Template_Click"/>
+                                    <Button Content="Пустая" Tag="blank" Click="Template_Click"/>
+                                </WrapPanel>
+                            </StackPanel>
+
+                            <TextBlock Text="Поля" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,12,0,4"/>
+                            <ItemsControl ItemsSource="{Binding Fields}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type local:FieldDraftVm}">
+                                        <Border Background="{StaticResource Card}" CornerRadius="8" Padding="8" Margin="0,0,0,8">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}"
+                                                             FontSize="12" Padding="6,4" ToolTip="Название поля"/>
+                                                    <CheckBox Grid.Column="1" Content="секрет" Margin="10,0,4,0"
+                                                              IsChecked="{Binding IsSecret}"/>
+                                                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="&#xE711;"
+                                                            Width="26" Height="26" FontSize="11" ToolTip="Убрать поле"
+                                                            Click="RemoveField_Click"/>
+                                                </Grid>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                             FontFamily="{StaticResource Mono}" FontSize="12"
+                                                             AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
+                                                             Visibility="{Binding ShowPlain, Converter={StaticResource Vis}}"/>
+                                                    <PasswordBox FontFamily="{StaticResource Mono}" FontSize="12"
+                                                                 Visibility="{Binding ShowPlain, Converter={StaticResource Vis}, ConverterParameter=not}"
+                                                                 Loaded="DraftPassword_Loaded" IsVisibleChanged="DraftPassword_IsVisibleChanged"
+                                                                 PasswordChanged="DraftPassword_PasswordChanged"/>
+                                                    <Button Grid.Column="1" Style="{StaticResource IconButton}" Width="28" Height="28"
+                                                            FontSize="12" Margin="4,0,0,0" VerticalAlignment="Top"
+                                                            ToolTip="Показать / скрыть" Click="DraftReveal_Click"
+                                                            Visibility="{Binding IsSecret, Converter={StaticResource Vis}}">
+                                                        <TextBlock>
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Text" Value="&#xE890;"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsRevealed}" Value="True">
+                                                                            <Setter Property="Text" Value="&#xED1A;"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Button>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Style="{StaticResource TextButton}" HorizontalAlignment="Left" Padding="10,5"
+                                    FontSize="12" Click="AddField_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="11"
+                                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="Добавить поле"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBlock x:Name="EditorError" Foreground="{StaticResource Danger}" FontSize="12"
+                                       TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Grid Grid.Row="1" Margin="14,8,14,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Style="{StaticResource DangerButton}" Padding="8,7" Click="DeleteEntry_Click"
+                                Visibility="{Binding IsNew, Converter={StaticResource Vis}, ConverterParameter=not}">
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="Удалить"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ConfirmDelete}" Value="True">
+                                                <Setter Property="Text" Value="Точно удалить?"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Button>
+                        <Button Grid.Column="2" Style="{StaticResource TextButton}" Content="Отмена"
+                                Margin="0,0,8,0" Click="CancelEdit_Click"/>
+                        <Button Grid.Column="3" Style="{StaticResource PrimaryButton}" Content="Сохранить"
+                                Click="SaveEdit_Click"/>
+                    </Grid>
+                </Grid>
+
+                <!-- ===== Подвал ===== -->
+                <Grid x:Name="Footer" Grid.Row="2" Margin="10,6,10,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="MenuButton" Style="{StaticResource IconButton}" Content="&#xE713;" Width="34" Height="34"
+                            FontSize="16" ToolTip="Меню" Click="Menu_Click"/>
+                    <TextBlock x:Name="StatusText" Grid.Column="1" FontSize="11.5" Foreground="{StaticResource TextDim}"
+                               VerticalAlignment="Center" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <Button x:Name="AddButton" Grid.Column="2" Style="{StaticResource IconButton}" Content="&#xE710;"
+                            Width="34" Height="34" FontSize="16" Foreground="{StaticResource Accent}"
+                            ToolTip="Добавить запись" Click="Add_Click" Visibility="Collapsed"/>
+                </Grid>
+
+                <!-- ===== Меню (шестерёнка) ===== -->
+                <Popup x:Name="MenuPopup" PlacementTarget="{Binding ElementName=MenuButton}" Placement="Top"
+                       StaysOpen="False" AllowsTransparency="True" VerticalOffset="-4">
+                    <Border Background="#2A2D34" CornerRadius="8" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                            Padding="4" MinWidth="200">
+                        <StackPanel>
+                            <StackPanel.Resources>
+                                <Style TargetType="Button">
+                                    <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="b" Background="Transparent" CornerRadius="5" Padding="10,7">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="b" Property="Background" Value="#3A3F49"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsEnabled" Value="False">
+                                                        <Setter TargetName="b" Property="Opacity" Value="0.4"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </StackPanel.Resources>
+                            <Button x:Name="LockMenuItem" Click="LockMenu_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE72E;" FontFamily="{StaticResource Icons}" Width="24" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Заблокировать"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OpenFolder_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE838;" FontFamily="{StaticResource Icons}" Width="24" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Папка хранилища"/>
+                                </StackPanel>
+                            </Button>
+                            <Button IsEnabled="False" ToolTip="Заход 2: способ отпирания, вызов шторки, автоблокировка">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" Width="24" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Настройки (скоро)"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBlock x:Name="KdfInfo" Foreground="{StaticResource TextDim}" FontSize="11"
+                                       Margin="10,4,10,4" TextWrapping="Wrap" MaxWidth="230"/>
+                            <Border Height="1" Background="{StaticResource Line}" Margin="4,2"/>
+                            <Button Click="Exit_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE7E8;" FontFamily="{StaticResource Icons}" Width="24" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Выход"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
