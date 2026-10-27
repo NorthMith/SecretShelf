@@ -5,7 +5,7 @@ namespace SecretShelf.App;
 
 /// <summary>
 /// Несекретные настройки приложения: %APPDATA%\SecretShelf\settings.json.
-/// Способ быстрого входа — вторая часть захода 2.
+/// Сам способ быстрого входа хранится не здесь, а в quick-unlock.json (QuickUnlockStore).
 /// </summary>
 public sealed class AppSettings
 {
@@ -19,6 +19,10 @@ public sealed class AppSettings
 
     // Буфер обмена
     public int ClipboardClearSeconds { get; set; } = 25;
+
+    // Вход
+    /// <summary>При быстром входе раз в столько дней спрашивать мастер-пароль; 0 — не спрашивать.</summary>
+    public int MasterPasswordEveryDays { get; set; } = 14;
 
     // Блокировка
     /// <summary>Минуты бездействия всей системы до блокировки; 0 — не блокировать.</summary>

@@ -22,6 +22,26 @@ public static class Autostart
         }
     }
 
+    /// <summary>Автозапуск включён, но, возможно, на другой exe (старая папка сборки).</summary>
+    public static bool IsRegistered
+    {
+        get
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey);
+            return key?.GetValue(ValueName) is string;
+        }
+    }
+
+    /// <summary>
+    /// Автозапуск указывает на другой exe (сборка переехала в новую папку) — перевести на этот.
+    /// Отладочные сборки не трогают автозапуск.
+    /// </summary>
+    public static void FollowMovedExe()
+    {
+        if (ExePath.Contains(@"\bin\Debug\", StringComparison.OrdinalIgnoreCase)) return;
+        if (IsRegistered && !IsEnabled) Set(true);
+    }
+
     public static void Set(bool enabled)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);

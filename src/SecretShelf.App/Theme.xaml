@@ -18,6 +18,8 @@
     <SolidColorBrush x:Key="AccentText" Color="#1D58B3"/>
     <SolidColorBrush x:Key="Danger" Color="#C23B3B"/>
     <SolidColorBrush x:Key="Ok" Color="#2E8A57"/>
+    <SolidColorBrush x:Key="WarnBg" Color="#FBF0D9"/>
+    <SolidColorBrush x:Key="WarnText" Color="#7A5310"/>
 
     <FontFamily x:Key="Mono">Cascadia Mono, Consolas</FontFamily>
     <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>

@@ -98,7 +98,7 @@ public sealed class Vault : IDisposable
     /// 143 МБ частной памяти после открытия, 12 МБ после сборки с уплотнением.
     /// Подсчёт редкий (раз на открытие или сохранение), поэтому собираем принудительно.
     /// </summary>
-    private static void ReleaseKdfMemory()
+    internal static void ReleaseKdfMemory()
     {
         GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
         GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
@@ -238,6 +238,59 @@ public sealed class Vault : IDisposable
         _db.Save(null);
         _dirty = false;
         ReleaseKdfMemory();
+    }
+
+    // ---------- импорт ----------
+
+    /// <summary>Ключи «сайт + логин» уже имеющихся записей — для отсева дублей при импорте.</summary>
+    public HashSet<string> ExistingLoginKeys()
+    {
+        lock (_sync)
+        {
+            var keys = new HashSet<string>();
+            foreach (var pe in _db.RootGroup.Entries)
+            {
+                string user = pe.Strings.ReadSafe(PwDefs.UserNameField);
+                string host = CsvImport.Host(pe.Strings.ReadSafe(PwDefs.UrlField));
+                keys.Add(CsvImport.DedupKey(host.Length > 0 ? host : pe.Strings.ReadSafe(PwDefs.TitleField), user));
+            }
+            return keys;
+        }
+    }
+
+    /// <summary>
+    /// Добавить импортированные логины. Поля: Логин, Пароль (скрыт), Адрес — в стандартные поля
+    /// KeePass (UserName, Password, URL), заметка — в Notes. Сохранение одно, после всех.
+    /// </summary>
+    public int Import(IEnumerable<ImportedLogin> logins)
+    {
+        lock (_sync)
+        {
+            int n = 0;
+            foreach (var l in logins)
+            {
+                var fields = new List<VaultFieldDraft>
+                {
+                    new() { Key = PwDefs.UserNameField, Label = "Логин", Value = l.UserName },
+                    new() { Key = PwDefs.PasswordField, Label = "Пароль", Value = l.Password, IsSecret = true },
+                };
+                if (l.Url.Length > 0) fields.Add(new() { Key = PwDefs.UrlField, Label = "Адрес", Value = l.Url });
+                if (l.Note.Length > 0) fields.Add(new() { Key = PwDefs.NotesField, Label = "Заметка", Value = l.Note });
+
+                var pe = new PwEntry(true, true);
+                _db.RootGroup.AddEntry(pe, true);
+                ApplyDraft(pe, l.Title, fields);
+                n++;
+            }
+            if (n > 0) MarkDirty();
+            return n;
+        }
+    }
+
+    /// <summary>Совпадает ли пароль с мастер-паролем открытого хранилища (для включения быстрого входа).</summary>
+    public bool CheckPassword(string password)
+    {
+        lock (_sync) return _db.MasterKey.EqualsValue(MakeKey(password));
     }
 
     /// <summary>

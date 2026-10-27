@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using SecretShelf.App.Services;
+using SecretShelf.Core;
 
 namespace SecretShelf.App;
 
@@ -21,12 +22,21 @@ public interface ISettingsHost
     void OpenVaultFolder();
     Task LockAsync();
     Task ExitAsync();
+
+    QuickUnlockMode QuickMode { get; }
+    Task<bool> IsHelloSupportedAsync();
+    /// <summary>Включить быстрый вход; возвращает текст ошибки или null.</summary>
+    Task<string?> EnableQuickUnlockAsync(QuickUnlockMode mode, string masterPassword, string? pin);
+    void DisableQuickUnlock();
+    void OpenImport();
 }
 
 public partial class SettingsView : UserControl
 {
     private static readonly (int minutes, string text)[] IdleChoices =
         { (0, "не блокировать"), (5, "5 минут"), (15, "15 минут"), (30, "30 минут"), (60, "1 час") };
+    private static readonly (int days, string text)[] MasterEveryChoices =
+        { (7, "7 дней"), (14, "14 дней"), (30, "30 дней"), (0, "не напоминать") };
     private static readonly (int seconds, string text)[] ClipboardChoices =
         { (10, "10 с"), (25, "25 с"), (45, "45 с"), (60, "1 мин"), (90, "1,5 мин") };
 
@@ -39,6 +49,7 @@ public partial class SettingsView : UserControl
         InitializeComponent();
         foreach (var (_, text) in IdleChoices) IdleBox.Items.Add(text);
         foreach (var (_, text) in ClipboardChoices) ClipboardBox.Items.Add(text);
+        foreach (var (_, text) in MasterEveryChoices) MasterEveryBox.Items.Add(text);
     }
 
     private AppSettings S => _host!.Settings;
@@ -62,7 +73,18 @@ public partial class SettingsView : UserControl
         KdfInfo.Text = "Защита файла: " + host.KdfDescription;
         CallMessage.Text = "";
         CloseChangePassword();
+        MasterEveryBox.SelectedIndex = IndexOfNearest(MasterEveryChoices.Select(c => c.days), S.MasterPasswordEveryDays);
+        QuickStatus.Text = "";
+        ShowQuickMode();
         _loading = false;
+        _ = CheckHelloAsync(host);
+    }
+
+    private async Task CheckHelloAsync(ISettingsHost host)
+    {
+        bool ok = await host.IsHelloSupportedAsync();
+        QuickHello.IsEnabled = ok || host.QuickMode == QuickUnlockMode.WindowsHello;
+        QuickHello.ToolTip = ok ? null : "Windows Hello на этом компьютере не настроен (Параметры → Учётные записи → Варианты входа).";
     }
 
     private static int IndexOfNearest(IEnumerable<int> values, int value)
@@ -75,6 +97,86 @@ public partial class SettingsView : UserControl
     private static string HotkeyText(string g) => string.IsNullOrEmpty(g) ? "выключена" : g;
 
     private void Back_Click(object sender, RoutedEventArgs e) => _host?.CloseSettings();
+
+    // ---------- быстрый вход ----------
+
+    private QuickUnlockMode _pendingMode;
+
+    /// <summary>Отметить текущий способ и спрятать блок включения.</summary>
+    private void ShowQuickMode()
+    {
+        var m = _host!.QuickMode;
+        QuickOff.IsChecked = m == QuickUnlockMode.Off;
+        QuickHello.IsChecked = m == QuickUnlockMode.WindowsHello;
+        QuickPin.IsChecked = m == QuickUnlockMode.Pin;
+        QuickNoPass.IsChecked = m == QuickUnlockMode.NoPassword;
+        QuickEnableBlock.Visibility = Visibility.Collapsed;
+        QuickMaster.Clear(); Pin1.Clear(); Pin2.Clear();
+        QuickMessage.Text = "";
+        MasterEveryRow.Visibility = m == QuickUnlockMode.Off ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void QuickMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (_host == null) return;
+        var mode = Enum.Parse<QuickUnlockMode>((string)((FrameworkElement)sender).Tag);
+        QuickStatus.Text = "";
+        if (mode == _host.QuickMode) { ShowQuickMode(); return; }
+        if (mode == QuickUnlockMode.Off)
+        {
+            _host.DisableQuickUnlock();
+            ShowQuickMode();
+            QuickStatus.Text = "Быстрый вход выключен: зашифрованный пароль стёрт с диска.";
+            return;
+        }
+
+        _pendingMode = mode;
+        (QuickEnableTitle.Text, QuickEnableHint.Text) = mode switch
+        {
+            QuickUnlockMode.WindowsHello => ("Вход по Windows Hello",
+                "Windows несколько раз попросит палец, лицо или ПИН Windows: создать ключ и проверить его."),
+            QuickUnlockMode.Pin => ("Вход по ПИН-коду",
+                $"После {QuickUnlockStore.MaxPinFailures} неверных ПИН-кодов подряд быстрый вход выключится. " +
+                "Короткий ПИН защищает от человека за компьютером, но не от кражи файлов вместе с учётной записью Windows."),
+            _ => ("Вход без пароля",
+                "Шторка будет открываться без вопросов у любого, кто вошёл в вашу учётную запись Windows. " +
+                "Защита остаётся только от других учётных записей и от копирования файла на другой компьютер."),
+        };
+        PinInputs.Visibility = mode == QuickUnlockMode.Pin ? Visibility.Visible : Visibility.Collapsed;
+        QuickMessage.Text = "";
+        QuickEnableBlock.Visibility = Visibility.Visible;
+        QuickMaster.Focus();
+    }
+
+    private void QuickCancel_Click(object sender, RoutedEventArgs e) => ShowQuickMode();
+
+    private async void QuickEnable_Click(object sender, RoutedEventArgs e)
+    {
+        if (_host == null) return;
+        string? pin = null;
+        if (_pendingMode == QuickUnlockMode.Pin)
+        {
+            if (Pin1.Password != Pin2.Password) { QuickMessage.Text = "ПИН-коды не совпадают."; return; }
+            pin = Pin1.Password;
+        }
+        QuickEnableButton.IsEnabled = false;
+        QuickMessage.Text = "";
+        string? error = await _host.EnableQuickUnlockAsync(_pendingMode, QuickMaster.Password, pin);
+        QuickEnableButton.IsEnabled = true;
+        if (error != null) { QuickMessage.Text = error; return; }
+        ShowQuickMode();
+        QuickStatus.Text = "Быстрый вход включён. Мастер-пароль всё равно понадобится: " +
+                           (S.MasterPasswordEveryDays > 0 ? $"раз в {S.MasterPasswordEveryDays} дней." : "при сбросе быстрого входа.");
+    }
+
+    private void MasterEvery_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || _host == null || MasterEveryBox.SelectedIndex < 0) return;
+        S.MasterPasswordEveryDays = MasterEveryChoices[MasterEveryBox.SelectedIndex].days;
+        _host.ApplySettings();
+    }
+
+    private void Import_Click(object sender, RoutedEventArgs e) => _host?.OpenImport();
 
     // ---------- блокировка, буфер ----------
 
@@ -221,9 +323,12 @@ public partial class SettingsView : UserControl
             ChangePassMessage.Text = error;
             return;
         }
+        bool hadQuick = QuickOff.IsChecked != true;
         CloseChangePassword();
         ChangePassMessage.Text = "";
         CallMessage.Text = "";
+        ShowQuickMode();
+        if (hadQuick) QuickStatus.Text = "Быстрый вход сброшен вместе со старым паролем — включите его заново.";
         KdfInfo.Text = "Пароль сменён. Копия со старым паролем — в папке backups. Защита файла: " + _host.KdfDescription;
     }
 

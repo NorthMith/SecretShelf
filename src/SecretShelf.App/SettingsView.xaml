@@ -42,14 +42,48 @@
                 </Border>
 
                 <TextBlock Text="Быстрый вход" FontSize="13" Margin="0,10,0,4"/>
-                <StackPanel IsEnabled="False">
-                    <RadioButton Content="Только мастер-пароль" IsChecked="True" Margin="0,2"/>
-                    <RadioButton Content="Windows Hello (отпечаток, лицо, ПИН Windows)" Margin="0,2"/>
-                    <RadioButton Content="ПИН-код SecretShelf" Margin="0,2"/>
-                    <RadioButton Content="Без пароля" Margin="0,2"/>
+                <StackPanel>
+                    <RadioButton x:Name="QuickOff" GroupName="quick" Tag="Off" Margin="0,2" Click="QuickMode_Click"
+                                 Content="Только мастер-пароль"/>
+                    <RadioButton x:Name="QuickHello" GroupName="quick" Tag="WindowsHello" Margin="0,2" Click="QuickMode_Click"
+                                 Content="Windows Hello (отпечаток, лицо, ПИН Windows)"/>
+                    <RadioButton x:Name="QuickPin" GroupName="quick" Tag="Pin" Margin="0,2" Click="QuickMode_Click"
+                                 Content="ПИН-код SecretShelf"/>
+                    <RadioButton x:Name="QuickNoPass" GroupName="quick" Tag="NoPassword" Margin="0,2" Click="QuickMode_Click"
+                                 Content="Без пароля"/>
+                    <TextBlock Text="открыто всем, кто вошёл в вашу учётную запись Windows" FontSize="11.5"
+                               Foreground="{StaticResource TextMuted}" Margin="22,0,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
-                <TextBlock Text="Отпечаток, ПИН и вход без пароля появятся в следующем обновлении."
-                           TextWrapping="Wrap" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,4,0,0"/>
+
+                <Border x:Name="QuickEnableBlock" Visibility="Collapsed" Background="{StaticResource Card}"
+                        BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,8,0,0">
+                    <StackPanel>
+                        <TextBlock x:Name="QuickEnableTitle" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="QuickEnableHint" FontSize="11.5" TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextDim}" Margin="0,4,0,8"/>
+                        <TextBlock Text="Мастер-пароль" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,0,0,3"/>
+                        <PasswordBox x:Name="QuickMaster"/>
+                        <StackPanel x:Name="PinInputs">
+                            <TextBlock Text="ПИН-код (4–12 цифр)" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,8,0,3"/>
+                            <PasswordBox x:Name="Pin1" MaxLength="12"/>
+                            <TextBlock Text="ПИН-код ещё раз" Foreground="{StaticResource TextDim}" FontSize="12" Margin="0,8,0,3"/>
+                            <PasswordBox x:Name="Pin2" MaxLength="12"/>
+                        </StackPanel>
+                        <TextBlock x:Name="QuickMessage" Foreground="{StaticResource Danger}" FontSize="12"
+                                   TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                            <Button Style="{StaticResource TextButton}" Content="Отмена" Padding="10,5" Margin="0,0,6,0"
+                                    Click="QuickCancel_Click"/>
+                            <Button x:Name="QuickEnableButton" Style="{StaticResource PrimaryButton}" Content="Включить"
+                                    Padding="10,5" Click="QuickEnable_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="QuickStatus" FontSize="11.5" Foreground="{StaticResource Ok}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                <Grid x:Name="MasterEveryRow" Margin="0,4">
+                    <TextBlock Text="Мастер-пароль раз в" VerticalAlignment="Center" FontSize="13"/>
+                    <ComboBox x:Name="MasterEveryBox" HorizontalAlignment="Right" Width="130" SelectionChanged="MasterEvery_Changed"/>
+                </Grid>
 
                 <!-- ===== Блокировка ===== -->
                 <TextBlock Style="{StaticResource SectionHeader}" Text="Блокировка"/>
@@ -88,11 +122,10 @@
 
                 <!-- ===== Данные ===== -->
                 <TextBlock Style="{StaticResource SectionHeader}" Text="Данные"/>
-                <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" IsEnabled="False"
-                        ToolTip="Появится в следующем обновлении">
+                <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Click="Import_Click">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE8B5;" FontFamily="{StaticResource Icons}" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="Импорт из браузера (CSV) — скоро" Foreground="{StaticResource TextMuted}"/>
+                        <TextBlock Text="Импорт из браузера (CSV)"/>
                     </StackPanel>
                 </Button>
                 <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Click="OpenFolder_Click">

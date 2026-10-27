@@ -19,7 +19,7 @@ namespace SecretShelf.App;
 /// с перетаскиванием, редактор записи, настройки. Здесь же живут службы
 /// (трей, горячая клавиша, автоблокировка): шторка — единственное окно приложения.
 /// </summary>
-public partial class DrawerWindow : Window, ISettingsHost
+public partial class DrawerWindow : Window, ISettingsHost, IImportHost
 {
     private readonly AppSettings _settings;
     private readonly SecureClipboard _clipboard = new();
@@ -30,6 +30,10 @@ public partial class DrawerWindow : Window, ISettingsHost
     private readonly TrayIcon _tray = new();
     private readonly GlobalHotkey _hotkey = new();
     private readonly AutoLock _autoLock;
+    private readonly QuickUnlockStore _quick = new(Path.Combine(AppSettings.Dir, "quick-unlock.json"));
+    private readonly HelloSigner _hello = new();
+    private bool _forceMaster; // «Войти мастер-паролем» или быстрый вход сломался
+    private bool _lockBusy;
     private int _slideToken; // защищает от наложения анимаций выезда и уезда
 
     private Vault? _vault;
@@ -87,6 +91,9 @@ public partial class DrawerWindow : Window, ISettingsHost
                 UpdateStatus();
             }
             ShowStartPanel();
+            // «Без пароля» открывает сразу; Hello при запуске не дёргаем — только когда шторку позвали.
+            if (LockPanel.IsVisible && QuickActive && _quick.Mode == QuickUnlockMode.NoPassword)
+                NoPassUnlock_Click(this, new RoutedEventArgs());
         };
         SystemParameters.StaticPropertyChanged += (_, e) =>
         {
@@ -115,6 +122,15 @@ public partial class DrawerWindow : Window, ISettingsHost
         Slide.BeginAnimation(TranslateTransform.XProperty,
             new DoubleAnimation(Width, 0, TimeSpan.FromMilliseconds(200)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
         FocusDefault();
+        AutoQuickUnlock();
+    }
+
+    /// <summary>Шторку позвали, а она заперта: Hello и «без пароля» срабатывают сами.</summary>
+    private void AutoQuickUnlock()
+    {
+        if (!LockPanel.IsVisible || _lockBusy || !QuickActive) return;
+        if (_quick.Mode == QuickUnlockMode.WindowsHello) HelloUnlock_Click(this, new RoutedEventArgs());
+        else if (_quick.Mode == QuickUnlockMode.NoPassword) NoPassUnlock_Click(this, new RoutedEventArgs());
     }
 
     private void CollapseDrawer()
@@ -144,7 +160,8 @@ public partial class DrawerWindow : Window, ISettingsHost
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Escape) return;
-        if (SettingsPanel.IsVisible)
+        if (ImportPanel.IsVisible) CloseImport();
+        else if (SettingsPanel.IsVisible)
         {
             if (SettingsPanel.IsCapturing) return; // Esc отменяет захват сочетания
             CloseSettings();
@@ -169,10 +186,11 @@ public partial class DrawerWindow : Window, ISettingsHost
 
     private void ShowPanel(FrameworkElement panel)
     {
-        foreach (var p in new FrameworkElement[] { SetupPanel, LockPanel, ListPanel, EditorPanel, SettingsPanel })
+        foreach (var p in new FrameworkElement[] { SetupPanel, LockPanel, ListPanel, EditorPanel, SettingsPanel, ImportPanel })
             p.Visibility = p == panel ? Visibility.Visible : Visibility.Collapsed;
 
-        bool unlocked = panel == ListPanel || panel == EditorPanel || panel == SettingsPanel;
+        if (panel == LockPanel) UpdateLockPanel();
+        bool unlocked = panel != SetupPanel && panel != LockPanel;
         bool list = panel == ListPanel;
         Footer.Visibility = list || panel == SetupPanel || panel == LockPanel ? Visibility.Visible : Visibility.Collapsed;
         MenuButton.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
@@ -188,7 +206,11 @@ public partial class DrawerWindow : Window, ISettingsHost
         Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (SetupPanel.IsVisible) SetupPass1.Focus();
-            else if (LockPanel.IsVisible) UnlockPass.Focus();
+            else if (LockPanel.IsVisible)
+            {
+                if (QuickPinBox.IsVisible) PinBox.Focus();
+                else if (MasterBox.IsVisible) UnlockPass.Focus();
+            }
             else if (EditorPanel.IsVisible) EditorTitle.Focus();
             else if (ListPanel.IsVisible) SearchText.Focus();
         });
@@ -226,34 +248,165 @@ public partial class DrawerWindow : Window, ISettingsHost
         if (e.Key == Key.Enter) Setup_Click(sender, e);
     }
 
-    private async void Unlock_Click(object sender, RoutedEventArgs e)
+    // =============== отпирание ===============
+
+    /// <summary>Быстрый вход включён и сейчас разрешён (не пора вводить мастер-пароль).</summary>
+    private bool QuickActive =>
+        _quick.Mode != QuickUnlockMode.Off && !_forceMaster && !_quick.IsMasterDue(_settings.MasterPasswordEveryDays);
+
+    private void UpdateLockPanel()
     {
-        string pass = UnlockPass.Password;
-        if (pass.Length == 0) return;
+        var m = _quick.Mode;
+        bool quick = QuickActive;
+        HelloButton.Visibility = quick && m == QuickUnlockMode.WindowsHello ? Visibility.Visible : Visibility.Collapsed;
+        QuickPinBox.Visibility = quick && m == QuickUnlockMode.Pin ? Visibility.Visible : Visibility.Collapsed;
+        NoPassButton.Visibility = quick && m == QuickUnlockMode.NoPassword ? Visibility.Visible : Visibility.Collapsed;
+        MasterBox.Visibility = quick ? Visibility.Collapsed : Visibility.Visible;
+        UseMasterLink.Visibility = quick ? Visibility.Visible : Visibility.Collapsed;
+
+        MasterHint.Text = m != QuickUnlockMode.Off && !_forceMaster && _quick.IsMasterDue(_settings.MasterPasswordEveryDays)
+            ? $"Раз в {_settings.MasterPasswordEveryDays} дней — мастер-пароль, чтобы он не забылся."
+            : m != QuickUnlockMode.Off ? "Мастер-пароль" : "";
+        MasterHint.Visibility = MasterHint.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UseMaster_Click(object sender, RoutedEventArgs e)
+    {
+        _forceMaster = true;
         UnlockError.Text = "";
-        UnlockButton.IsEnabled = false;
-        UnlockButton.Content = "Открываю…";
+        UpdateLockPanel();
+        FocusDefault();
+    }
+
+    private void SetLockBusy(bool busy, string? caption = null)
+    {
+        _lockBusy = busy;
+        foreach (var b in new Button[] { UnlockButton, HelloButton, PinButton, NoPassButton }) b.IsEnabled = !busy;
+        UnlockButton.Content = busy && MasterBox.IsVisible ? caption ?? "Открываю…" : "Открыть";
+    }
+
+    /// <summary>Общий путь: открыть хранилище паролем (введённым или из быстрого входа).</summary>
+    private async Task OpenWith(string password, bool viaMaster)
+    {
         try
         {
             string path = _settings.VaultPath;
-            var vault = await Task.Run(() => Vault.Open(path, pass));
+            var vault = await Task.Run(() => Vault.Open(path, password));
+            if (viaMaster) _quick.MarkMasterVerified();
+            _forceMaster = false;
             UnlockPass.Clear();
+            PinBox.Clear();
             OnUnlocked(vault);
         }
         catch (WrongPasswordException)
         {
-            UnlockError.Text = "Неверный пароль.";
-            UnlockPass.SelectAll();
-            UnlockPass.Focus();
+            if (viaMaster)
+            {
+                UnlockError.Text = "Неверный пароль.";
+                UnlockPass.SelectAll();
+                UnlockPass.Focus();
+            }
+            else
+            {
+                // Пароль, сохранённый для быстрого входа, не подошёл: файл меняли другой программой.
+                DisableQuickUnlock();
+                _forceMaster = true;
+                UpdateLockPanel();
+                UnlockError.Text = "Сохранённый для быстрого входа пароль не подошёл — быстрый вход выключен. Войдите мастер-паролем.";
+            }
         }
         catch (Exception ex)
         {
             UnlockError.Text = "Не удалось открыть файл: " + ex.Message;
         }
+    }
+
+    private async void Unlock_Click(object sender, RoutedEventArgs e)
+    {
+        string pass = UnlockPass.Password;
+        if (pass.Length == 0 || _lockBusy) return;
+        UnlockError.Text = "";
+        SetLockBusy(true);
+        try { await OpenWith(pass, viaMaster: true); }
+        finally { SetLockBusy(false); }
+    }
+
+    private async void PinUnlock_Click(object sender, RoutedEventArgs e)
+    {
+        string pin = PinBox.Password;
+        if (pin.Length == 0 || _lockBusy) return;
+        UnlockError.Text = "";
+        SetLockBusy(true);
+        try
+        {
+            string pass = await Task.Run(() => _quick.UnlockAsync(pin: pin));
+            await OpenWith(pass, viaMaster: false);
+        }
+        catch (WrongPinException ex)
+        {
+            UnlockError.Text = $"Неверный ПИН-код. Осталось попыток: {ex.AttemptsLeft}.";
+            PinBox.Clear();
+            PinBox.Focus();
+        }
+        catch (QuickUnlockException ex) { QuickFailed(ex.Message); }
+        finally { SetLockBusy(false); }
+    }
+
+    private void PinBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) PinUnlock_Click(sender, e);
+    }
+
+    private async void HelloUnlock_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lockBusy) return;
+        UnlockError.Text = "";
+        SetLockBusy(true);
+        try
+        {
+            string pass = await WithoutTopmost(() => _quick.UnlockAsync(signer: _hello));
+            await OpenWith(pass, viaMaster: false);
+        }
+        catch (OperationCanceledException) { UnlockError.Text = "Вход отменён."; }
+        catch (QuickUnlockException ex) { QuickFailed(ex.Message); }
+        catch (Exception ex) { UnlockError.Text = "Windows Hello не сработал: " + ex.Message; }
+        finally { SetLockBusy(false); }
+    }
+
+    private async void NoPassUnlock_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lockBusy) return;
+        UnlockError.Text = "";
+        SetLockBusy(true);
+        try
+        {
+            string pass = await _quick.UnlockAsync();
+            await OpenWith(pass, viaMaster: false);
+        }
+        catch (QuickUnlockException ex) { QuickFailed(ex.Message); }
+        finally { SetLockBusy(false); }
+    }
+
+    private void QuickFailed(string message)
+    {
+        _forceMaster = true;
+        UpdateLockPanel();
+        UnlockError.Text = message;
+        FocusDefault();
+    }
+
+    /// <summary>
+    /// Окно Windows Hello может оказаться под шторкой (она поверх всех окон),
+    /// поэтому на время запроса шторка перестаёт быть «поверх всех».
+    /// </summary>
+    private async Task<T> WithoutTopmost<T>(Func<Task<T>> action)
+    {
+        Topmost = false;
+        try { return await action(); }
         finally
         {
-            UnlockButton.IsEnabled = true;
-            UnlockButton.Content = "Открыть";
+            Topmost = true;
+            if (IsVisible) Activate();
         }
     }
 
@@ -666,7 +819,11 @@ public partial class DrawerWindow : Window, ISettingsHost
     /// <summary>Автозапуск включается один раз — при первом запуске приложения.</summary>
     private void FirstRunDefaults()
     {
-        if (_settings.AutostartInitialized) return;
+        if (_settings.AutostartInitialized)
+        {
+            try { Autostart.FollowMovedExe(); } catch (Exception) { /* не вышло — переключатель покажет */ }
+            return;
+        }
         try { Autostart.Set(true); } catch (Exception) { /* не вышло — переключатель в настройках покажет */ }
         _settings.AutostartInitialized = true;
         _settings.Save();
@@ -691,6 +848,8 @@ public partial class DrawerWindow : Window, ISettingsHost
         try
         {
             await Task.Run(() => vault.ChangePassword(oldPassword, newPassword));
+            // Быстрый вход хранит старый пароль — он больше не годится.
+            if (_quick.Mode != QuickUnlockMode.Off) DisableQuickUnlock();
             return null;
         }
         catch (WrongPasswordException) { return "Текущий пароль неверный."; }
@@ -705,6 +864,54 @@ public partial class DrawerWindow : Window, ISettingsHost
     }
 
     private async void ExitLink_Click(object sender, RoutedEventArgs e) => await ExitAsync();
+
+    public QuickUnlockMode QuickMode => _quick.Mode;
+
+    public Task<bool> IsHelloSupportedAsync() => _hello.IsSupportedAsync();
+
+    public async Task<string?> EnableQuickUnlockAsync(QuickUnlockMode mode, string masterPassword, string? pin)
+    {
+        if (_vault == null) return "Хранилище заблокировано.";
+        if (!_vault.CheckPassword(masterPassword)) return "Мастер-пароль неверный.";
+        try
+        {
+            if (mode == QuickUnlockMode.WindowsHello)
+                await WithoutTopmost(async () => { await _quick.EnableAsync(mode, masterPassword, signer: _hello); return 0; });
+            else
+                await Task.Run(() => _quick.EnableAsync(mode, masterPassword, pin));
+            return null;
+        }
+        catch (QuickUnlockException ex) { return ex.Message; }
+        catch (OperationCanceledException) { return "Отменено в окне Windows Hello."; }
+        catch (Exception ex) { return "Не удалось включить: " + ex.Message; }
+    }
+
+    public void DisableQuickUnlock()
+    {
+        if (_quick.Mode == QuickUnlockMode.WindowsHello) _ = _hello.DeleteKeyAsync();
+        _quick.Disable();
+    }
+
+    // =============== импорт (IImportHost) ===============
+
+    public void OpenImport()
+    {
+        if (_vault == null) return;
+        ImportPanel.Start(this);
+        ShowPanel(ImportPanel);
+    }
+
+    public void CloseImport() => ShowPanel(_vault != null ? ListPanel : LockPanel);
+
+    public HashSet<string> ExistingLoginKeys() => _vault?.ExistingLoginKeys() ?? new();
+
+    public int Import(IReadOnlyList<ImportedLogin> logins)
+    {
+        if (_vault == null) return 0;
+        int n = _vault.Import(logins);
+        ReloadEntries();
+        return n;
+    }
 
     public async Task ExitAsync()
     {
