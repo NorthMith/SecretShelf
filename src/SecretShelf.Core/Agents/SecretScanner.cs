@@ -43,21 +43,34 @@ public static class SecretScanner
         ("Private key block", new Regex(@"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
     };
 
+    public static bool IsForbidden(string path) => ForbiddenReason(path) != null;
+
     /// <summary>
-    /// Пути, которые не трогаются никогда: учётные данные самих ИИ-клиентов
-    /// (их нельзя вынимать для автоматики — это нарушение условий Anthropic) и само хранилище.
+    /// Почему путь трогать нельзя никогда; null — можно (с подтверждением владельца, как обычно).
+    /// Запрещены только учётные данные самих ИИ-клиентов — их нельзя вынимать для автоматики,
+    /// это нарушение условий Anthropic, — и само хранилище. Остальное в папках клиентов
+    /// (каналы, хаб, скрипты с ключами владельца) доступно. До 28.10.2026 запрещалась вся
+    /// папка ~/.claude, и из-за этого не переносился ключ Gemini из ~/.claude/channels.
     /// </summary>
-    public static bool IsForbidden(string path)
+    public static string? ForbiddenReason(string path)
     {
         string p = System.IO.Path.GetFullPath(path).Replace('/', '\\');
         string name = System.IO.Path.GetFileName(p);
-        if (name.Equals(".credentials.json", StringComparison.OrdinalIgnoreCase)) return true;
-        if (p.EndsWith(".kdbx", StringComparison.OrdinalIgnoreCase)) return true;
-        if (p.Contains(@"\SecretShelf\quick-unlock", StringComparison.OrdinalIgnoreCase)) return true;
-        // Папки ИИ-клиентов целиком, кроме Telegram-хаба (там токены ботов владельца).
-        if (p.Contains(@"\.claude\hub\", StringComparison.OrdinalIgnoreCase)) return false;
-        string[] clientDirs = { @"\.claude\", @"\.codex\", @"\.config\anthropic\", @"\AppData\Roaming\Claude\", @"\AppData\Local\Claude-Data\" };
-        return clientDirs.Any(d => p.Contains(d, StringComparison.OrdinalIgnoreCase));
+        const StringComparison ic = StringComparison.OrdinalIgnoreCase;
+
+        if (name.Equals(".credentials.json", ic)
+            || name.StartsWith(".claude.json", ic)            // ~/.claude.json и его копии рядом
+            || p.Contains(@"\.claude\backups\", ic))         // автокопии ~/.claude.json
+            return "Это вход в Claude — учётные данные ИИ-клиентов шторка не трогает никогда.";
+        if (p.Contains(@"\.codex\", ic) && name.Equals("auth.json", ic))
+            return "Это вход в Codex — учётные данные ИИ-клиентов шторка не трогает никогда.";
+        if (p.Contains(@"\.config\anthropic\", ic))
+            return "Это профили входа Anthropic — учётные данные ИИ-клиентов шторка не трогает никогда.";
+        if (p.Contains(@"\AppData\Roaming\Claude\", ic) || p.Contains(@"\AppData\Local\Claude-Data\", ic))
+            return "Это данные приложения Claude (в них вход в учётную запись) — шторка их не трогает никогда.";
+        if (p.EndsWith(".kdbx", ic) || p.Contains(@"\SecretShelf\quick-unlock", ic))
+            return "Это само хранилище SecretShelf — его через агентов не трогают.";
+        return null;
     }
 
     public static List<SecretFinding> Scan(string directory, int maxDepth = 6)

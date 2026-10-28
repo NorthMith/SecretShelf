@@ -217,13 +217,45 @@ public sealed class AgentGatewayTests : IDisposable
         Assert.Single(_confirm.Asked);
     }
 
-    [Fact]
-    public void Claude_credentials_are_forbidden()
+    [Theory]
+    [InlineData(@".claude\.credentials.json", "вход в Claude")]
+    [InlineData(@".claude.json", "вход в Claude")]
+    [InlineData(@".claude.json.bak-20261028-0411", "вход в Claude")]
+    [InlineData(@".claude\backups\.claude.json.backup.1793144265508", "вход в Claude")]
+    [InlineData(@".codex\auth.json", "вход в Codex")]
+    [InlineData(@".config\anthropic\profiles.json", "профили входа Anthropic")]
+    [InlineData(@"AppData\Roaming\Claude\config.json", "данные приложения Claude")]
+    [InlineData(@"AppData\Roaming\SecretShelf\vault.kdbx", "хранилище SecretShelf")]
+    public void Client_credentials_and_vault_are_forbidden_with_reason(string relative, string reasonPart)
     {
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        Assert.True(SecretScanner.IsForbidden(Path.Combine(home, ".claude", ".credentials.json")));
-        Assert.True(SecretScanner.IsForbidden(Path.Combine(home, ".claude", "settings.json")));
-        Assert.False(SecretScanner.IsForbidden(Path.Combine(home, ".claude", "hub", ".env")));
+        Assert.Contains(reasonPart, SecretScanner.ForbiddenReason(Path.Combine(home, relative)));
+    }
+
+    [Theory]
+    [InlineData(@".claude\channels\gemini\.env")] // ключ Gemini владельца — повод правки 28.10.2026
+    [InlineData(@".claude\hub\.env")]
+    [InlineData(@".claude\settings.json")]
+    [InlineData(@".codex\config.toml")]
+    [InlineData(@"D:\Projects\X\.env")]
+    public void Owner_keys_in_client_folders_are_allowed(string relative)
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Assert.Null(SecretScanner.ForbiddenReason(Path.Combine(home, relative)));
+    }
+
+    [Fact]
+    public async Task Forbidden_file_refusal_tells_why()
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var r = await Call(new AgentRequest
+        {
+            Op = "store", Entry = "X", Field = "Y", Source = "file",
+            Path = Path.Combine(home, ".claude", ".credentials.json"),
+        });
+        Assert.False(r.Ok);
+        Assert.Contains("учётные данные ИИ-клиентов", r.Text);
+        Assert.Empty(_confirm.Asked); // до окна дело не доходит
     }
 
     [Fact]

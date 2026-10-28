@@ -359,7 +359,7 @@ public sealed class AgentGateway
     {
         string dir = (r.Directory ?? "").Trim();
         if (!Path.IsPathFullyQualified(dir) || !System.IO.Directory.Exists(dir)) throw new AgentError($"Папки «{dir}» нет (нужен полный путь).");
-        if (SecretScanner.IsForbidden(dir + Path.DirectorySeparatorChar)) throw new AgentError("Эту папку просматривать нельзя.");
+        if (SecretScanner.ForbiddenReason(dir + Path.DirectorySeparatorChar) is { } why) throw new AgentError(why);
         await Approve(client, "scan", dir, Array.Empty<VaultField>(), $"{client} ищет ключи в папке",
             $"Папка: {dir} и вложенные (до 6 уровней).\nАгент увидит пути файлов и имена переменных, значения — нет.", ct, alwaysConfirm: true);
         var found = await Task.Run(() => SecretScanner.Scan(dir), ct);
@@ -475,7 +475,7 @@ public sealed class AgentGateway
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
             throw new AgentError("Нужен полный путь к файлу (path).");
         string full = Path.GetFullPath(path);
-        if (SecretScanner.IsForbidden(full)) throw new AgentError("Этот файл трогать нельзя.");
+        if (SecretScanner.ForbiddenReason(full) is { } why) throw new AgentError(why);
         if (mustExist && !File.Exists(full)) throw new AgentError($"Файла {full} нет.");
         return full;
     }
