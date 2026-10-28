@@ -942,11 +942,7 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
         _gateway = new AgentGateway(() => _vault, new WindowConfirmer(Dispatcher), _agentLog, () => _settings.AgentsEnabled);
         _gateway.LockedRequest += client => Dispatcher.BeginInvoke(() =>
             _tray.Notify("SecretShelf", $"{client} просит ключ, а хранилище заперто. Откройте шторку."));
-        _gateway.VaultChanged += () => Dispatcher.BeginInvoke(() =>
-        {
-            if (_editor == null && ListPanel.IsVisible) ReloadEntries();
-            else _reloadPending = true;
-        });
+        _gateway.VaultChanged += () => Dispatcher.BeginInvoke(OnAgentChangedVault);
         _pipeCts = new CancellationTokenSource();
         var token = _pipeCts.Token;
         Task.Run(async () =>
@@ -961,6 +957,19 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
                 });
             }
         });
+    }
+
+    /// <summary>
+    /// Агент добавил, заменил или удалил ключ. Список обновляется сразу, даже если шторка
+    /// свёрнута или открыты настройки: раньше проверялось «список виден на экране», и у
+    /// свёрнутой шторки новый ключ появлялся только после перезапуска (баг 28.10.2026).
+    /// Отложить можно только при открытом редакторе — чтобы не сбить правку владельца.
+    /// </summary>
+    private void OnAgentChangedVault()
+    {
+        if (_vault == null) return;
+        if (_editor != null) _reloadPending = true; // применится при возврате к списку
+        else ReloadEntries();
     }
 
     public IReadOnlyList<AgentLogEntry> AgentLogTail(int n) => _agentLog.Tail(n);
