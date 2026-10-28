@@ -23,8 +23,8 @@ public partial class ConfirmWindow : Window
         TrustButton.Visibility = TrustHint.Visibility = r.CanTrust ? Visibility.Visible : Visibility.Collapsed;
         if (r.Destructive)
         {
-            Icon.Text = "";
-            Icon.Foreground = (Brush)FindResource("Danger");
+            HeaderIcon.Text = "";
+            HeaderIcon.Foreground = (Brush)FindResource("Danger");
             AllowButton.Content = "Удалить";
             AllowButton.Background = AllowButton.BorderBrush = (Brush)FindResource("Danger");
         }
