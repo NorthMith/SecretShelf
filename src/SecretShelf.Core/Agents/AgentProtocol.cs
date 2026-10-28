@@ -44,6 +44,17 @@ public sealed class AgentRequest
 
     // scan
     public string? Directory { get; set; }
+
+    /// <summary>
+    /// Процесс, подключившийся к каналу (MCP-сервер сессии агента). Заполняет шторка по данным
+    /// Windows, а не клиент: в JSON поле не читается и не пишется — подделать его нельзя.
+    /// </summary>
+    [JsonIgnore]
+    public int ClientProcessId { get; set; }
+
+    /// <summary>Только для тестов: ключ сессии без реального процесса.</summary>
+    [JsonIgnore]
+    internal string? SessionKeyOverride { get; set; }
 }
 
 public sealed class AgentResponse

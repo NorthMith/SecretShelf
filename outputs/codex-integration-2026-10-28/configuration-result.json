@@ -1,0 +1,17 @@
+{
+  "rules_updated": [
+    "C:\\Users\\Главбух\\.codex\\AGENTS.md",
+    "C:\\Users\\Главбух\\.codex\\owner-rules-reference-2026-10-01.md"
+  ],
+  "backups": [
+    "C:\\Users\\Главбух\\.codex\\AGENTS.md.bak-2026-10-28-050220-msk",
+    "C:\\Users\\Главбух\\.codex\\owner-rules-reference-2026-10-01.md.bak-2026-10-28-050220-msk",
+    "C:\\Users\\Главбух\\.codex\\config.toml.bak-2026-10-28-050220-msk.dpapi"
+  ],
+  "config_backup": "DPAPI CurrentUser; round-trip verified",
+  "mcp": "secretshelf",
+  "command": "D:/Projects/SecretShelf/dist/mcp/SecretShelf.Mcp.exe",
+  "other_settings_preserved": true,
+  "skill": "C:\\Users\\Главбух\\.codex\\skills\\secretshelf\\SKILL.md",
+  "skill_sha256": "e0b14920e20c68be90dd83a79a10e6564f4ee0828638d24510b90a58282ca197"
+}

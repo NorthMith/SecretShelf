@@ -9,7 +9,7 @@ public partial class ConfirmWindow : Window
 {
     private const int TimeoutSeconds = 60;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
-    private readonly TaskCompletionSource<bool> _answer = new();
+    private readonly TaskCompletionSource<ConfirmDecision> _answer = new();
     private int _left = TimeoutSeconds;
 
     public ConfirmWindow(ConfirmRequest r)
@@ -20,6 +20,7 @@ public partial class ConfirmWindow : Window
         SecretsText.Text = r.Secrets.Count > 0 ? string.Join(", ", r.Secrets) : "—";
         SecretsLabel.Visibility = SecretsText.Visibility = r.Secrets.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         DetailsText.Text = r.Details;
+        TrustButton.Visibility = TrustHint.Visibility = r.CanTrust ? Visibility.Visible : Visibility.Collapsed;
         if (r.Destructive)
         {
             Icon.Text = "";
@@ -30,7 +31,7 @@ public partial class ConfirmWindow : Window
 
         _timer.Tick += (_, _) =>
         {
-            if (--_left <= 0) Finish(false);
+            if (--_left <= 0) Finish(ConfirmDecision.Deny);
             else CountdownText.Text = $"Нет ответа {_left} с — отказ";
         };
         CountdownText.Text = $"Нет ответа {_left} с — отказ";
@@ -44,22 +45,23 @@ public partial class ConfirmWindow : Window
         };
     }
 
-    public Task<bool> Answer => _answer.Task;
+    public Task<ConfirmDecision> Answer => _answer.Task;
 
-    private void Allow_Click(object sender, RoutedEventArgs e) => Finish(true);
-    private void Deny_Click(object sender, RoutedEventArgs e) => Finish(false);
+    private void Allow_Click(object sender, RoutedEventArgs e) => Finish(ConfirmDecision.AllowOnce);
+    private void Trust_Click(object sender, RoutedEventArgs e) => Finish(ConfirmDecision.TrustHour);
+    private void Deny_Click(object sender, RoutedEventArgs e) => Finish(ConfirmDecision.Deny);
 
-    public void Finish(bool allowed)
+    public void Finish(ConfirmDecision decision)
     {
         _timer.Stop();
-        _answer.TrySetResult(allowed);
+        _answer.TrySetResult(decision);
         Close();
     }
 
     protected override void OnClosed(EventArgs e)
     {
         _timer.Stop();
-        _answer.TrySetResult(false); // закрыли крестиком или Alt+F4 — отказ
+        _answer.TrySetResult(ConfirmDecision.Deny); // закрыли крестиком или Alt+F4 — отказ
         base.OnClosed(e);
     }
 }
@@ -74,7 +76,7 @@ public sealed class WindowConfirmer : IConfirmer
 
     public WindowConfirmer(Dispatcher ui) => _ui = ui;
 
-    public async Task<bool> ConfirmAsync(ConfirmRequest request, CancellationToken ct)
+    public async Task<ConfirmDecision> ConfirmAsync(ConfirmRequest request, CancellationToken ct)
     {
         await _one.WaitAsync(ct);
         try
@@ -87,7 +89,7 @@ public sealed class WindowConfirmer : IConfirmer
                 w.Activate();
                 return w.Answer;
             });
-            using (ct.Register(() => _ui.BeginInvoke(() => w?.Finish(false)))) // агент ушёл — окно убрать
+            using (ct.Register(() => _ui.BeginInvoke(() => w?.Finish(ConfirmDecision.Deny)))) // агент ушёл — окно убрать
                 return await shown;
         }
         finally

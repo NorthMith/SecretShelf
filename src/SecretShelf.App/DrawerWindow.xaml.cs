@@ -436,6 +436,7 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
     {
         if (_vault == null) return;
         if (_editor != null) CloseEditor();
+        _gateway?.RevokeTrust(); // доверие агентам живёт не дольше открытого хранилища
         _clipboard.ClearNow();
         _saveDebounce.Stop();
         var vault = _vault;
@@ -963,6 +964,10 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
     }
 
     public IReadOnlyList<AgentLogEntry> AgentLogTail(int n) => _agentLog.Tail(n);
+
+    public IReadOnlyList<TrustedSession> ActiveTrust() => _gateway?.ActiveTrust() ?? Array.Empty<TrustedSession>();
+
+    public void RevokeTrust() => _gateway?.RevokeTrust();
 
     private void DisposeServices()
     {

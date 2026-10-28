@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -7,14 +8,26 @@ namespace SecretShelf.Core.Agents;
 
 /// <summary>Что показать владельцу в окне подтверждения. Значений секретов здесь нет.</summary>
 /// <param name="Destructive">Удаление — окно красное, кнопка «Удалить».</param>
-public sealed record ConfirmRequest(string Client, string Title, string Details, IReadOnlyList<string> Secrets, bool Destructive = false);
+/// <param name="CanTrust">Показывать кнопку «Доверять 1 час» (сессия опознана, действие не удаление и не поиск).</param>
+public sealed record ConfirmRequest(string Client, string Title, string Details, IReadOnlyList<string> Secrets,
+                                    bool Destructive = false, bool CanTrust = false);
+
+public enum ConfirmDecision
+{
+    Deny,
+    AllowOnce,
+    /// <summary>Разрешить и не спрашивать эту сессию агента час (использование и добавление ключей).</summary>
+    TrustHour,
+}
 
 /// <summary>Окно подтверждения. Реализация — в шторке; в тестах — заглушка.</summary>
 public interface IConfirmer
 {
-    /// <returns>true — владелец разрешил.</returns>
-    Task<bool> ConfirmAsync(ConfirmRequest request, CancellationToken ct);
+    Task<ConfirmDecision> ConfirmAsync(ConfirmRequest request, CancellationToken ct);
 }
+
+/// <summary>Сессия агента, которой владелец доверился на время.</summary>
+public sealed record TrustedSession(string Client, DateTime Until);
 
 internal sealed class AgentError : Exception
 {
@@ -38,18 +51,58 @@ internal sealed class AgentDenied : Exception
 public sealed class AgentGateway
 {
     public const int MaxStoreBytes = 64 * 1024;
+    public static readonly TimeSpan TrustDuration = TimeSpan.FromHours(1);
+
+    /// <summary>Действия, на которые распространяется доверие. Удаление и поиск по папкам — никогда.</summary>
+    private static readonly HashSet<string> TrustableOps = new() { "run", "write_file", "store" };
 
     private readonly Func<Vault?> _vault;
     private readonly IConfirmer _confirmer;
     private readonly AgentLog _log;
     private readonly Func<bool> _enabled;
+    private readonly Func<DateTime> _now;
+    private readonly ConcurrentDictionary<string, TrustedSession> _trust = new();
 
-    public AgentGateway(Func<Vault?> vault, IConfirmer confirmer, AgentLog log, Func<bool> enabled)
+    /// <summary>
+    /// Сессия текущего запроса (процесс MCP-сервера + время его запуска). Задаётся в HandleAsync
+    /// и доходит до Approve через await; null — сессию опознать не удалось, доверие невозможно.
+    /// </summary>
+    private readonly AsyncLocal<string?> _session = new();
+
+    public AgentGateway(Func<Vault?> vault, IConfirmer confirmer, AgentLog log, Func<bool> enabled, Func<DateTime>? now = null)
     {
         _vault = vault;
         _confirmer = confirmer;
         _log = log;
         _enabled = enabled;
+        _now = now ?? (() => DateTime.Now);
+    }
+
+    /// <summary>Действующие доверия — для экрана настроек.</summary>
+    public IReadOnlyList<TrustedSession> ActiveTrust()
+    {
+        var now = _now();
+        foreach (var (k, t) in _trust)
+            if (t.Until <= now) _trust.TryRemove(k, out _);
+        return _trust.Values.OrderBy(t => t.Until).ToList();
+    }
+
+    /// <summary>Отозвать все доверия (кнопка в настройках, блокировка хранилища).</summary>
+    public void RevokeTrust() => _trust.Clear();
+
+    /// <summary>
+    /// Ключ сессии: процесс MCP-сервера (у каждой сессии агента свой) и время его запуска —
+    /// чтобы номер процесса, доставшийся новому процессу, не унаследовал доверие.
+    /// </summary>
+    internal static string? SessionKey(int processId)
+    {
+        if (processId <= 0) return null;
+        try
+        {
+            using var p = Process.GetProcessById(processId);
+            return $"{processId}:{p.StartTime.Ticks}";
+        }
+        catch (Exception) { return null; }
     }
 
     /// <summary>Агент обратился к запертому хранилищу — шторка может напомнить владельцу.</summary>
@@ -61,6 +114,7 @@ public sealed class AgentGateway
     public async Task<AgentResponse> HandleAsync(AgentRequest r, CancellationToken ct = default)
     {
         string client = string.IsNullOrWhiteSpace(r.Client) ? "неизвестный агент" : r.Client.Trim();
+        _session.Value = r.SessionKeyOverride ?? SessionKey(r.ClientProcessId);
         if (!_enabled()) return AgentResponse.Fail("Доступ агентов выключен в настройках SecretShelf.");
         var vault = _vault();
         if (vault == null)
@@ -324,7 +378,29 @@ public sealed class AgentGateway
             _log.Write(client, op, target, "без подтверждения (галочка у поля)");
             return;
         }
-        bool ok = await _confirmer.ConfirmAsync(new ConfirmRequest(client, title, details.TrimEnd(), list.Select(f => f.Label).ToList(), destructive), ct);
+
+        string? session = _session.Value;
+        bool canTrust = session != null && !destructive && TrustableOps.Contains(op);
+        if (canTrust && _trust.TryGetValue(session!, out var t))
+        {
+            if (t.Until > _now())
+            {
+                _log.Write(client, op, target, $"без подтверждения (доверие сессии до {t.Until:HH:mm})");
+                return;
+            }
+            _trust.TryRemove(session!, out _);
+        }
+
+        var decision = await _confirmer.ConfirmAsync(new ConfirmRequest(client, title, details.TrimEnd(),
+            list.Select(f => f.Label).ToList(), destructive, canTrust), ct);
+        if (decision == ConfirmDecision.TrustHour && canTrust)
+        {
+            var until = _now() + TrustDuration;
+            _trust[session!] = new TrustedSession(client, until);
+            _log.Write(client, op, target, $"разрешено владельцем, доверие сессии до {until:HH:mm}");
+            return;
+        }
+        bool ok = decision != ConfirmDecision.Deny;
         _log.Write(client, op, target, ok ? "разрешено владельцем" : "отказано владельцем");
         if (!ok) throw new AgentDenied();
     }

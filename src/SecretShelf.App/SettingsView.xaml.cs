@@ -31,6 +31,8 @@ public interface ISettingsHost
     void OpenImport();
 
     IReadOnlyList<SecretShelf.Core.Agents.AgentLogEntry> AgentLogTail(int n);
+    IReadOnlyList<SecretShelf.Core.Agents.TrustedSession> ActiveTrust();
+    void RevokeTrust();
 }
 
 public partial class SettingsView : UserControl
@@ -82,6 +84,7 @@ public partial class SettingsView : UserControl
         var log = host.AgentLogTail(15);
         AgentLogList.ItemsSource = log.Select(e => $"{e.Time:dd.MM HH:mm} {e.Client} · {e.Op} · {e.Target} · {e.Outcome}").ToList();
         AgentLogEmpty.Visibility = log.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShowTrust();
         _loading = false;
         _ = CheckHelloAsync(host);
     }
@@ -183,6 +186,19 @@ public partial class SettingsView : UserControl
     }
 
     private void Import_Click(object sender, RoutedEventArgs e) => _host?.OpenImport();
+
+    private void ShowTrust()
+    {
+        var trust = _host!.ActiveTrust();
+        TrustBlock.Visibility = trust.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        TrustText.Text = string.Join("\n", trust.Select(t => $"{t.Client} — до {t.Until:HH:mm}"));
+    }
+
+    private void RevokeTrust_Click(object sender, RoutedEventArgs e)
+    {
+        _host?.RevokeTrust();
+        ShowTrust();
+    }
 
     private void Agents_Click(object sender, RoutedEventArgs e)
     {

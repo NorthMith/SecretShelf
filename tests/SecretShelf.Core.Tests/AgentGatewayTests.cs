@@ -15,21 +15,23 @@ public sealed class AgentGatewayTests : IDisposable
 
     private sealed class FakeConfirmer : IConfirmer
     {
-        public bool Answer = true;
+        public ConfirmDecision Answer = ConfirmDecision.AllowOnce;
         public List<ConfirmRequest> Asked = new();
-        public Task<bool> ConfirmAsync(ConfirmRequest request, CancellationToken ct)
+        public Task<ConfirmDecision> ConfirmAsync(ConfirmRequest request, CancellationToken ct)
         {
             Asked.Add(request);
             return Task.FromResult(Answer);
         }
     }
 
+    private DateTime _clock = new(2026, 10, 28, 12, 0, 0);
+
     public AgentGatewayTests()
     {
         Directory.CreateDirectory(_dir);
         _vault = Vault.Create(Path.Combine(_dir, "vault.kdbx"), "pass", kdfTargetMs: 50);
         _current = _vault;
-        _gw = new AgentGateway(() => _current, _confirm, new AgentLog(Path.Combine(_dir, "log.jsonl")), () => _enabled);
+        _gw = new AgentGateway(() => _current, _confirm, new AgentLog(Path.Combine(_dir, "log.jsonl")), () => _enabled, () => _clock);
 
         _vault.AddEntry("API A", new[]
         {
@@ -96,7 +98,7 @@ public sealed class AgentGatewayTests : IDisposable
     [Fact]
     public async Task Run_denied_by_owner_does_not_run()
     {
-        _confirm.Answer = false;
+        _confirm.Answer = ConfirmDecision.Deny;
         string marker = Path.Combine(_dir, "ran.txt");
         var r = await Call(new AgentRequest
         {
@@ -243,6 +245,101 @@ public sealed class AgentGatewayTests : IDisposable
         var r = await AgentPipe.SendAsync(new AgentRequest { Op = "get", Client = "pipe", Entry = "API A", Field = "Сервис" }, CancellationToken.None, name);
         Assert.True(r.Ok, r.Text);
         Assert.Equal("Anthropic", r.Text);
+        cts.Cancel();
+        await server;
+    }
+
+    // ---------- доверие сессии на час ----------
+
+    private Task<AgentResponse> CallAs(string session, AgentRequest r)
+    {
+        r.Client = "test-agent";
+        r.SessionKeyOverride = session;
+        return _gw.HandleAsync(r);
+    }
+
+    [Fact]
+    public async Task Trust_hour_skips_window_for_same_session_only()
+    {
+        _confirm.Answer = ConfirmDecision.TrustHour;
+        Assert.True((await CallAs("s1", RunEcho())).Ok);
+        Assert.True(Assert.Single(_confirm.Asked).CanTrust);
+
+        Assert.True((await CallAs("s1", RunEcho())).Ok);
+        Assert.Single(_confirm.Asked); // вторая команда той же сессии — без окна
+
+        _confirm.Answer = ConfirmDecision.AllowOnce;
+        Assert.True((await CallAs("s2", RunEcho())).Ok);
+        Assert.Equal(2, _confirm.Asked.Count); // другая сессия того же агента — спрашивает
+        Assert.Equal(new[] { "test-agent" }, _gw.ActiveTrust().Select(t => t.Client));
+    }
+
+    [Fact]
+    public async Task Trust_covers_store_but_not_delete_or_scan()
+    {
+        _confirm.Answer = ConfirmDecision.TrustHour;
+        await CallAs("s1", RunEcho());
+        _confirm.Asked.Clear();
+
+        string env = Path.Combine(_dir, ".env");
+        File.WriteAllText(env, "X_TOKEN=abc12345\n");
+        Assert.True((await CallAs("s1", new AgentRequest { Op = "store", Entry = "X", Field = "Token", Source = "env_file", Path = env, Variable = "X_TOKEN" })).Ok);
+        Assert.Empty(_confirm.Asked); // добавление — под доверием
+
+        _confirm.Answer = ConfirmDecision.AllowOnce;
+        Assert.True((await CallAs("s1", new AgentRequest { Op = "delete", Entry = "X", Field = "Token" })).Ok);
+        var del = Assert.Single(_confirm.Asked);
+        Assert.False(del.CanTrust); // удаление — всегда окно и без кнопки доверия
+
+        Assert.True((await CallAs("s1", new AgentRequest { Op = "scan", Directory = _dir })).Ok);
+        Assert.Equal(2, _confirm.Asked.Count);
+        Assert.False(_confirm.Asked[1].CanTrust);
+    }
+
+    [Fact]
+    public async Task Trust_expires_after_an_hour_and_can_be_revoked()
+    {
+        _confirm.Answer = ConfirmDecision.TrustHour;
+        await CallAs("s1", RunEcho());
+        _clock = _clock.AddMinutes(59);
+        await CallAs("s1", RunEcho());
+        Assert.Single(_confirm.Asked);
+
+        _clock = _clock.AddMinutes(2); // прошёл час с минутой
+        _confirm.Answer = ConfirmDecision.TrustHour;
+        await CallAs("s1", RunEcho());
+        Assert.Equal(2, _confirm.Asked.Count);
+
+        _gw.RevokeTrust();
+        Assert.Empty(_gw.ActiveTrust());
+        await CallAs("s1", RunEcho());
+        Assert.Equal(3, _confirm.Asked.Count);
+    }
+
+    [Fact]
+    public async Task Unknown_session_gets_no_trust_button()
+    {
+        _confirm.Answer = ConfirmDecision.TrustHour; // даже если окно вернёт «доверять» — не запоминать
+        await Call(RunEcho());
+        await Call(RunEcho());
+        Assert.Equal(2, _confirm.Asked.Count);
+        Assert.All(_confirm.Asked, a => Assert.False(a.CanTrust));
+    }
+
+    [Fact]
+    public async Task Pipe_reports_real_client_process()
+    {
+        string name = "SecretShelf.Test." + Guid.NewGuid().ToString("N");
+        int seen = 0;
+        using var cts = new CancellationTokenSource();
+        var server = AgentPipe.ServeAsync((req, ct) =>
+        {
+            seen = req.ClientProcessId;
+            return Task.FromResult(AgentResponse.Success("ok"));
+        }, cts.Token, name);
+        await AgentPipe.SendAsync(new AgentRequest { Op = "list" }, CancellationToken.None, name);
+        Assert.Equal(Environment.ProcessId, seen); // клиент — этот же тестовый процесс
+        Assert.NotNull(AgentGateway.SessionKey(seen));
         cts.Cancel();
         await server;
     }

@@ -125,6 +125,14 @@
                 <CheckBox x:Name="AgentsBox" Style="{StaticResource Switch}" Content="Доступ для агентов (MCP)" Click="Agents_Click"/>
                 <TextBlock TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource TextMuted}" Margin="0,2,0,6"
                            Text="Агентам видны только поля, которым вы открыли доступ: «⋯» у поля → «Доступ для ИИ»."/>
+                <StackPanel x:Name="TrustBlock" Visibility="Collapsed" Margin="0,2,0,6">
+                    <TextBlock Text="Доверенные сессии агентов" FontSize="12" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                    <TextBlock x:Name="TrustText" FontSize="12.5" TextWrapping="Wrap"/>
+                    <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Foreground="{StaticResource Danger}"
+                            Click="RevokeTrust_Click" Margin="-6,2,0,0">
+                        <TextBlock Text="Отозвать доверие"/>
+                    </Button>
+                </StackPanel>
                 <TextBlock Text="Журнал запросов (значений в нём нет)" FontSize="12" Foreground="{StaticResource TextDim}" Margin="0,4,0,4"/>
                 <TextBlock x:Name="AgentLogEmpty" Text="Запросов пока не было." FontSize="12" Foreground="{StaticResource TextMuted}"/>
                 <ItemsControl x:Name="AgentLogList">

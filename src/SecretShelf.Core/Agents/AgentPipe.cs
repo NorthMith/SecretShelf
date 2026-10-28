@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
@@ -12,6 +13,9 @@ namespace SecretShelf.Core.Agents;
 /// </summary>
 public static class AgentPipe
 {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetNamedPipeClientProcessId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint clientProcessId);
+
     /// <summary>Имя канала; SECRETSHELF_PIPE переопределяет его для тестов.</summary>
     public static string Name =>
         Environment.GetEnvironmentVariable("SECRETSHELF_PIPE") is { Length: > 0 } custom
@@ -59,6 +63,8 @@ public static class AgentPipe
                 using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
                 string? line = await reader.ReadLineAsync(ct);
                 var req = line == null ? null : JsonSerializer.Deserialize<AgentRequest>(line, AgentJson.Options);
+                if (req != null && GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint pid))
+                    req.ClientProcessId = (int)pid; // кто подключился — по данным Windows
                 resp = req == null ? AgentResponse.Fail("Пустой запрос.") : await handle(req, ct);
             }
             catch (JsonException) { resp = AgentResponse.Fail("Неразборчивый запрос."); }
