@@ -17,12 +17,15 @@ public enum FieldAccess
 }
 
 /// <summary>Описание поля без значения. Значение живёт в защищённой памяти KeePassLib.</summary>
+/// <param name="AllowedTargets">Программы, которым агент может подставлять значение; пусто — любые.</param>
+/// <param name="NoConfirm">Агенту не нужно подтверждение владельца для этого поля (кроме удаления).</param>
 public sealed record VaultField(
     string Key,
     string Label,
     bool IsSecret,
     FieldAccess Access,
-    IReadOnlyList<string> AllowedTargets);
+    IReadOnlyList<string> AllowedTargets,
+    bool NoConfirm = false);
 
 /// <summary>Запись хранилища: название и упорядоченный список полей.</summary>
 public sealed record VaultEntry(string Id, string Title, IReadOnlyList<VaultField> Fields);
@@ -36,6 +39,7 @@ public sealed class VaultFieldDraft
     public bool IsSecret { get; set; }
     public FieldAccess Access { get; set; } = FieldAccess.Hidden;
     public List<string> AllowedTargets { get; set; } = new();
+    public bool NoConfirm { get; set; }
 }
 
 public sealed class WrongPasswordException : Exception

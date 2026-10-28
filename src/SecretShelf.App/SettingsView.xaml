@@ -120,6 +120,22 @@
                     <ComboBox x:Name="ClipboardBox" HorizontalAlignment="Right" Width="130" SelectionChanged="Clipboard_Changed"/>
                 </Grid>
 
+                <!-- ===== ИИ-агенты ===== -->
+                <TextBlock Style="{StaticResource SectionHeader}" Text="ИИ-агенты"/>
+                <CheckBox x:Name="AgentsBox" Style="{StaticResource Switch}" Content="Доступ для агентов (MCP)" Click="Agents_Click"/>
+                <TextBlock TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource TextMuted}" Margin="0,2,0,6"
+                           Text="Агентам видны только поля, которым вы открыли доступ: «⋯» у поля → «Доступ для ИИ»."/>
+                <TextBlock Text="Журнал запросов (значений в нём нет)" FontSize="12" Foreground="{StaticResource TextDim}" Margin="0,4,0,4"/>
+                <TextBlock x:Name="AgentLogEmpty" Text="Запросов пока не было." FontSize="12" Foreground="{StaticResource TextMuted}"/>
+                <ItemsControl x:Name="AgentLogList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" FontFamily="{StaticResource Mono}" FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextDim}" Margin="0,1"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <!-- ===== Данные ===== -->
                 <TextBlock Style="{StaticResource SectionHeader}" Text="Данные"/>
                 <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Click="Import_Click">

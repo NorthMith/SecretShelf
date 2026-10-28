@@ -160,7 +160,12 @@
                                                                 <ColumnDefinition Width="*"/>
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="2" Text="&#xE99A;" FontFamily="{StaticResource Icons}"
+                                                                       FontSize="12" Foreground="{StaticResource Accent}" VerticalAlignment="Center"
+                                                                       Margin="0,0,4,0" ToolTip="{Binding AgentTip}"
+                                                                       Visibility="{Binding HasAgentAccess, Converter={StaticResource Vis}}"/>
                                                             <TextBlock Text="{Binding Label}" Foreground="{StaticResource TextDim}"
                                                                        FontSize="12" VerticalAlignment="Center"
                                                                        TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}"/>
@@ -169,7 +174,7 @@
                                                                        TextTrimming="CharacterEllipsis" Margin="4,0"
                                                                        ToolTip="Щелчок — скопировать"
                                                                        MouseLeftButtonUp="FieldValue_Click"/>
-                                                            <Button Grid.Column="2" Style="{StaticResource IconButton}" Width="26" Height="24"
+                                                            <Button Grid.Column="3" Style="{StaticResource IconButton}" Width="26" Height="24"
                                                                     FontSize="12" ToolTip="Показать / скрыть" Click="Reveal_Click"
                                                                     Visibility="{Binding IsSecret, Converter={StaticResource Vis}}">
                                                                 <TextBlock>
@@ -185,7 +190,7 @@
                                                                     </TextBlock.Style>
                                                                 </TextBlock>
                                                             </Button>
-                                                            <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE8C8;"
+                                                            <Button Grid.Column="4" Style="{StaticResource IconButton}" Content="&#xE8C8;"
                                                                     Width="26" Height="24" FontSize="12" ToolTip="Скопировать"
                                                                     Click="Copy_Click"/>
                                                         </Grid>
@@ -246,7 +251,8 @@
                             <ItemsControl ItemsSource="{Binding Fields}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type local:FieldDraftVm}">
-                                        <Grid Margin="0,0,0,8">
+                                        <StackPanel Margin="0,0,0,8">
+                                        <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="96"/>
                                                 <ColumnDefinition Width="*"/>
@@ -319,11 +325,47 @@
                                                             <MenuItem Header="Ниже" Click="FieldMenuDown_Click"/>
                                                             <Separator/>
                                                             <MenuItem Header="Убрать поле" Click="RemoveField_Click"/>
+                                                            <Separator/>
+                                                            <MenuItem Header="Доступ для ИИ…" Click="FieldMenuAgent_Click"/>
                                                         </ContextMenu>
                                                     </Button.ContextMenu>
                                                 </Button>
                                             </StackPanel>
                                         </Grid>
+
+                                        <!-- доступ для ИИ-агентов -->
+                                        <Border Background="{StaticResource Card}" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                                                CornerRadius="8" Padding="10,8" Margin="0,6,0,0"
+                                                Visibility="{Binding IsAccessOpen, Converter={StaticResource Vis}}">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <TextBlock Text="Доступ для ИИ" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    <Button Style="{StaticResource IconButton}" Content="&#xE711;" Width="22" Height="22" FontSize="10"
+                                                            HorizontalAlignment="Right" ToolTip="Свернуть" Click="FieldMenuAgent_Click"/>
+                                                </Grid>
+                                                <ComboBox SelectedIndex="{Binding AccessIndex}" Margin="0,6,0,0" FontSize="12">
+                                                    <ComboBoxItem Content="Закрыто — агент поля не видит"/>
+                                                    <ComboBoxItem Content="Видно название — взять не может"/>
+                                                    <ComboBoxItem Content="Подстановка — в команду или файл"/>
+                                                    <ComboBoxItem Content="Открыто — видит значение"/>
+                                                </ComboBox>
+                                                <TextBlock Text="«Открыто» — только для несекретного: логин, адрес сервера." FontSize="11"
+                                                           Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                                <StackPanel Visibility="{Binding AgentCanUse, Converter={StaticResource Vis}}">
+                                                    <CheckBox Content="Без подтверждения (кроме удаления)" IsChecked="{Binding NoConfirm}"
+                                                              Margin="0,8,0,0" Foreground="{StaticResource Text}"/>
+                                                    <TextBlock Text="Разрешённые программы" FontSize="12" Foreground="{StaticResource TextDim}" Margin="0,8,0,3"/>
+                                                    <Grid>
+                                                        <TextBox Text="{Binding AllowedTargetsText, UpdateSourceTrigger=PropertyChanged}" FontSize="12" Padding="6,4"/>
+                                                        <TextBlock Style="{StaticResource Placeholder}" FontSize="12" Text="curl, python, file"
+                                                                   Visibility="{Binding AllowedTargetsText, Converter={StaticResource EmptyVis}}"/>
+                                                    </Grid>
+                                                    <TextBlock FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,3,0,0"
+                                                               Text="Через запятую. Пусто — любая программа. file — запись в файл."/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

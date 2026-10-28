@@ -29,6 +29,8 @@ public interface ISettingsHost
     Task<string?> EnableQuickUnlockAsync(QuickUnlockMode mode, string masterPassword, string? pin);
     void DisableQuickUnlock();
     void OpenImport();
+
+    IReadOnlyList<SecretShelf.Core.Agents.AgentLogEntry> AgentLogTail(int n);
 }
 
 public partial class SettingsView : UserControl
@@ -76,6 +78,10 @@ public partial class SettingsView : UserControl
         MasterEveryBox.SelectedIndex = IndexOfNearest(MasterEveryChoices.Select(c => c.days), S.MasterPasswordEveryDays);
         QuickStatus.Text = "";
         ShowQuickMode();
+        AgentsBox.IsChecked = S.AgentsEnabled;
+        var log = host.AgentLogTail(15);
+        AgentLogList.ItemsSource = log.Select(e => $"{e.Time:dd.MM HH:mm} {e.Client} · {e.Op} · {e.Target} · {e.Outcome}").ToList();
+        AgentLogEmpty.Visibility = log.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         _loading = false;
         _ = CheckHelloAsync(host);
     }
@@ -177,6 +183,13 @@ public partial class SettingsView : UserControl
     }
 
     private void Import_Click(object sender, RoutedEventArgs e) => _host?.OpenImport();
+
+    private void Agents_Click(object sender, RoutedEventArgs e)
+    {
+        if (_host == null) return;
+        S.AgentsEnabled = AgentsBox.IsChecked == true;
+        _host.ApplySettings();
+    }
 
     // ---------- блокировка, буфер ----------
 

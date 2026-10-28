@@ -29,6 +29,9 @@ public sealed class AppSettings
     public int IdleLockMinutes { get; set; } = 15;
     public bool LockOnSessionLock { get; set; } = true;
 
+    // ИИ-агенты (MCP)
+    public bool AgentsEnabled { get; set; } = true;
+
     // Вызов шторки
     public bool ShowPeekTab { get; set; } = true;
     public bool ShowTrayIcon { get; set; } = true;

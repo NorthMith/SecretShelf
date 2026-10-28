@@ -54,6 +54,12 @@ public sealed class TrayIcon : IDisposable
         set => _icon.Visible = value;
     }
 
+    /// <summary>Всплывающее уведомление у значка (например, агент просит ключ, а хранилище заперто).</summary>
+    public void Notify(string title, string text)
+    {
+        if (_icon.Visible) _icon.ShowBalloonTip(5000, title, text, ToolTipIcon.Info);
+    }
+
     /// <summary>«Заблокировать» доступно только при открытом хранилище.</summary>
     public void SetUnlocked(bool unlocked) => _lockItem.Enabled = unlocked;
 

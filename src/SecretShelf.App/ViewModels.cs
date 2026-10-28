@@ -38,6 +38,9 @@ public sealed class FieldVm : Observable
     public VaultField Field { get; }
     public string Label => Field.Label;
     public bool IsSecret => Field.IsSecret;
+    public bool HasAgentAccess => Field.Access >= FieldAccess.NameOnly;
+    public string AgentTip => "Доступ для ИИ: " + SecretShelf.Core.Agents.AgentGateway.AccessName(Field.Access) +
+                              (Field.NoConfirm ? ", без подтверждения" : "");
 
     public string Display
     {
@@ -83,9 +86,37 @@ public sealed class FieldDraftVm : Observable
     private bool _isRenaming;
     private string? _placeholder;
 
+    private FieldAccess _access;
+    private bool _noConfirm;
+    private string _allowedTargetsText = "";
+    private bool _isAccessOpen;
+
     public string? Key { get; init; }
-    public FieldAccess Access { get; init; }
-    public List<string> AllowedTargets { get; init; } = new();
+
+    public FieldAccess Access
+    {
+        get => _access;
+        set { if (Set(ref _access, value)) { Raise(nameof(AccessIndex)); Raise(nameof(AgentCanUse)); } }
+    }
+
+    /// <summary>Для ComboBox: 0 закрыто … 3 открыто.</summary>
+    public int AccessIndex
+    {
+        get => (int)_access;
+        set => Access = (FieldAccess)Math.Clamp(value, 0, 3);
+    }
+
+    /// <summary>Галочка и программы имеют смысл, только если агент может пользоваться значением.</summary>
+    public bool AgentCanUse => _access >= FieldAccess.Inject;
+
+    public bool NoConfirm { get => _noConfirm; set => Set(ref _noConfirm, value); }
+    public string AllowedTargetsText { get => _allowedTargetsText; set => Set(ref _allowedTargetsText, value); }
+    public bool IsAccessOpen { get => _isAccessOpen; set => Set(ref _isAccessOpen, value); }
+
+    public List<string> AllowedTargets
+    {
+        init => _allowedTargetsText = string.Join(", ", value);
+    }
 
     public string Label { get => _label; set => Set(ref _label, value); }
     public string Value { get => _value; set => Set(ref _value, value); }
@@ -122,8 +153,8 @@ public sealed class FieldDraftVm : Observable
 
     public VaultFieldDraft ToDraft() => new()
     {
-        Key = Key, Label = Label, Value = Value, IsSecret = IsSecret,
-        Access = Access, AllowedTargets = AllowedTargets,
+        Key = Key, Label = Label, Value = Value, IsSecret = IsSecret, Access = Access, NoConfirm = NoConfirm,
+        AllowedTargets = AllowedTargetsText.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
     };
 }
 

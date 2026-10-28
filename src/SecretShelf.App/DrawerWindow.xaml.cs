@@ -11,6 +11,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using SecretShelf.App.Services;
 using SecretShelf.Core;
+using SecretShelf.Core.Agents;
 
 namespace SecretShelf.App;
 
@@ -33,6 +34,10 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
     private readonly QuickUnlockStore _quick = new(Path.Combine(AppSettings.Dir, "quick-unlock.json"));
     private readonly HelloSigner _hello = new();
     private bool _forceMaster; // «Войти мастер-паролем» или быстрый вход сломался
+    private readonly AgentLog _agentLog = new(Path.Combine(AppSettings.Dir, "agent-log.jsonl"));
+    private AgentGateway? _gateway;
+    private CancellationTokenSource? _pipeCts;
+    private bool _reloadPending; // агент поменял хранилище, пока был открыт редактор
     private bool _lockBusy;
     private int _slideToken; // защищает от наложения анимаций выезда и уезда
 
@@ -85,6 +90,7 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
             PlaceAtRightEdge();
             FirstRunDefaults();
             ApplySettings();
+            StartAgents();
             if (!_hotkey.TrySet(_settings.Hotkey))
             {
                 _saveStatus = $"Горячая клавиша {_settings.Hotkey} занята — выберите другую в настройках";
@@ -190,6 +196,7 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
             p.Visibility = p == panel ? Visibility.Visible : Visibility.Collapsed;
 
         if (panel == LockPanel) UpdateLockPanel();
+        if (panel == ListPanel && _reloadPending) { _reloadPending = false; ReloadEntries(); }
         bool unlocked = panel != SetupPanel && panel != LockPanel;
         bool list = panel == ListPanel;
         Footer.Visibility = list || panel == SetupPanel || panel == LockPanel ? Visibility.Visible : Visibility.Collapsed;
@@ -589,7 +596,7 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
             ed.Fields.Add(new FieldDraftVm
             {
                 Key = f.Key, Label = f.Label, Value = _vault.GetValue(vm.Id, f.Key), IsSecret = f.IsSecret,
-                Access = f.Access, AllowedTargets = f.AllowedTargets.ToList(),
+                Access = f.Access, AllowedTargets = f.AllowedTargets.ToList(), NoConfirm = f.NoConfirm,
             });
         OpenEditor(ed);
     }
@@ -668,6 +675,11 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
     private void FieldMenuRename_Click(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).DataContext is FieldDraftVm f) f.IsRenaming = true;
+    }
+
+    private void FieldMenuAgent_Click(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is FieldDraftVm f) f.IsAccessOpen = !f.IsAccessOpen;
     }
 
     private void FieldMenuUp_Click(object sender, RoutedEventArgs e)
@@ -923,8 +935,38 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
         Application.Current.Shutdown();
     }
 
+    /// <summary>Канал для MCP-сервера: агенты обращаются к ключам только через шторку.</summary>
+    private void StartAgents()
+    {
+        _gateway = new AgentGateway(() => _vault, new WindowConfirmer(Dispatcher), _agentLog, () => _settings.AgentsEnabled);
+        _gateway.LockedRequest += client => Dispatcher.BeginInvoke(() =>
+            _tray.Notify("SecretShelf", $"{client} просит ключ, а хранилище заперто. Откройте шторку."));
+        _gateway.VaultChanged += () => Dispatcher.BeginInvoke(() =>
+        {
+            if (_editor == null && ListPanel.IsVisible) ReloadEntries();
+            else _reloadPending = true;
+        });
+        _pipeCts = new CancellationTokenSource();
+        var token = _pipeCts.Token;
+        Task.Run(async () =>
+        {
+            try { await AgentPipe.ServeAsync(_gateway.HandleAsync, token); }
+            catch (Exception ex)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _saveStatus = "Канал для агентов не запустился: " + ex.Message;
+                    UpdateStatus();
+                });
+            }
+        });
+    }
+
+    public IReadOnlyList<AgentLogEntry> AgentLogTail(int n) => _agentLog.Tail(n);
+
     private void DisposeServices()
     {
+        _pipeCts?.Cancel();
         _autoLock.Dispose();
         _hotkey.Dispose();
         _tray.Dispose(); // иначе значок висит в трее до наведения мыши

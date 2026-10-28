@@ -355,7 +355,7 @@ public sealed class Vault : IDisposable
         throw new KeyNotFoundException($"Запись {entryId} не найдена.");
     }
 
-    private sealed record FieldMeta(string k, string l, bool s, FieldAccess a, List<string>? t);
+    private sealed record FieldMeta(string k, string l, bool s, FieldAccess a, List<string>? t, bool n = false);
 
     private static void ApplyDraft(PwEntry pe, string title, List<VaultFieldDraft> drafts)
     {
@@ -388,7 +388,8 @@ public sealed class Vault : IDisposable
                 used.Add(key);
             }
             pe.Strings.Set(key, new ProtectedString(d.IsSecret, d.Value ?? ""));
-            metas.Add(new FieldMeta(key, label, d.IsSecret, d.Access, d.AllowedTargets.Count > 0 ? d.AllowedTargets : null));
+            metas.Add(new FieldMeta(key, label, d.IsSecret, d.Access,
+                d.AllowedTargets.Count > 0 ? d.AllowedTargets : null, d.NoConfirm));
         }
 
         pe.CustomData.Set(FieldsMetaKey, JsonSerializer.Serialize(metas));
@@ -414,7 +415,7 @@ public sealed class Vault : IDisposable
             var metas = JsonSerializer.Deserialize<List<FieldMeta>>(json) ?? new();
             foreach (var m in metas)
                 if (pe.Strings.Exists(m.k))
-                    fields.Add(new VaultField(m.k, m.l, m.s, m.a, (IReadOnlyList<string>?)m.t ?? Array.Empty<string>()));
+                    fields.Add(new VaultField(m.k, m.l, m.s, m.a, (IReadOnlyList<string>?)m.t ?? Array.Empty<string>(), m.n));
         }
         else
         {
