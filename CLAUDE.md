@@ -24,3 +24,8 @@
   так и держать: не вызывать в ней `Expand`/`OpenSettings` (они показывают окно).
 - **Release-exe занят, пока шторка запущена у владельца.** Его процесс не гасить —
   попросить выйти (шестерёнка → «Выйти из SecretShelf», или меню значка в трее).
+- **MCP-сервер подключён к Claude Code** (28.10.2026, область user) из `dist\mcp\SecretShelf.Mcp.exe`,
+  скилл — `~/.claude/skills/secretshelf/` (копия `docs/agents/secretshelf/SKILL.md`).
+  Поменял сервер — `dotnet publish src/SecretShelf.Mcp -c Release -o dist/mcp`; если exe занят,
+  его держат открытые сессии Claude Code — просить владельца перезапустить их, процессы не гасить.
+  Поменял скилл в docs — скопировать в `~/.claude/skills/secretshelf/` после «ставь» владельца.
