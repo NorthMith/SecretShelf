@@ -36,6 +36,7 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
     private bool _forceMaster; // «Войти мастер-паролем» или быстрый вход сломался
     private readonly AgentLog _agentLog = new(Path.Combine(AppSettings.Dir, "agent-log.jsonl"));
     private AgentGateway? _gateway;
+    private readonly TempSecret _temp = new(); // верхняя строка; живёт только в памяти
     private CancellationTokenSource? _pipeCts;
     private bool _reloadPending; // агент поменял хранилище, пока был открыт редактор
     private bool _lockBusy;
@@ -60,6 +61,7 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
 
         _view = CollectionViewSource.GetDefaultView(_entries);
         EntryList.ItemsSource = _view;
+        TempBar.Attach(_temp, CopyTemp, TempToEntry);
 
         _saveDebounce.Tick += async (_, _) => { _saveDebounce.Stop(); await SaveInBackground(); };
         _clipboard.Countdown += left => { _clipboardLeft = left; UpdateStatus(); };
@@ -437,6 +439,7 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
         if (_vault == null) return;
         if (_editor != null) CloseEditor();
         _gateway?.RevokeTrust(); // доверие агентам живёт не дольше открытого хранилища
+        _temp.Clear("стёрто при блокировке");
         _clipboard.ClearNow();
         _saveDebounce.Stop();
         var vault = _vault;
@@ -500,6 +503,36 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
             _saveStatus = "Буфер обмена занят: " + ex.Message;
         }
         UpdateStatus();
+    }
+
+    // =============== временный секрет ===============
+
+    /// <returns>false — буфер занят; секрет тогда не стирается.</returns>
+    private bool CopyTemp(string value)
+    {
+        bool ok;
+        try
+        {
+            _clipboard.Copy(value, _settings.ClipboardClearSeconds);
+            _saveStatus = "Скопировано из временного секрета";
+            ok = true;
+        }
+        catch (Exception ex)
+        {
+            _saveStatus = "Буфер обмена занят: " + ex.Message;
+            ok = false;
+        }
+        UpdateStatus();
+        return ok;
+    }
+
+    /// <summary>«В запись»: ключ от агента становится постоянной записью — владелец даёт ей название.</summary>
+    private void TempToEntry(string value)
+    {
+        var ed = new EditorVm();
+        ed.ApplyTemplate("api");
+        ed.Fields[1].Value = value;
+        OpenEditor(ed);
     }
 
     // =============== перетаскивание ===============
@@ -939,7 +972,12 @@ public partial class DrawerWindow : Window, ISettingsHost, IImportHost
     /// <summary>Канал для MCP-сервера: агенты обращаются к ключам только через шторку.</summary>
     private void StartAgents()
     {
-        _gateway = new AgentGateway(() => _vault, new WindowConfirmer(Dispatcher), _agentLog, () => _settings.AgentsEnabled);
+        _gateway = new AgentGateway(() => _vault, new WindowConfirmer(Dispatcher), _agentLog, () => _settings.AgentsEnabled, temp: _temp);
+        _temp.Changed += () => Dispatcher.BeginInvoke(() =>
+        {
+            if (_temp.Source == TempSecretSource.Agent)
+                _tray.Notify("SecretShelf", $"{_temp.PutBy} положил ключ во временный секрет — скопируйте его в шторке.");
+        });
         _gateway.LockedRequest += client => Dispatcher.BeginInvoke(() =>
             _tray.Notify("SecretShelf", $"{client} просит ключ, а хранилище заперто. Откройте шторку."));
         _gateway.VaultChanged += () => Dispatcher.BeginInvoke(OnAgentChangedVault);

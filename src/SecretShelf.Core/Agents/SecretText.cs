@@ -72,4 +72,13 @@ public static class SecretText
     /// <summary>Подставить значения в шаблон {{Запись/Поле}}.</summary>
     public static string Render(string template, Func<SecretRef, string> resolve) =>
         Placeholder.Replace(template, m => resolve(new SecretRef(m.Groups[1].Value, m.Groups[2].Value)));
+
+    public const string TempRefName = "Временный";
+    private static readonly Regex TempPlaceholder = new(@"\{\{\s*" + TempRefName + @"\s*\}\}", RegexOptions.IgnoreCase);
+
+    /// <summary>Есть ли в шаблоне ссылка на временный секрет {{Временный}}.</summary>
+    public static bool HasTempRef(string? template) => template != null && TempPlaceholder.IsMatch(template);
+
+    /// <summary>Подставить временный секрет вместо {{Временный}}.</summary>
+    public static string RenderTemp(string template, string value) => TempPlaceholder.Replace(template, _ => value);
 }

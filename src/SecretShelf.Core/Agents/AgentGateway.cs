@@ -46,7 +46,8 @@ internal sealed class AgentDenied : Exception
 ///  - подстановка — полям «Подстановка» и «Открыто», и только разрешённым программам поля;
 ///  - каждое действие с секретом — с подтверждением владельца, если у поля не стоит
 ///    «без подтверждения»; новые записи, поиск по папкам и удаление — с подтверждением всегда;
-///  - вывод программ возвращается с замаскированными значениями.
+///  - вывод программ возвращается с замаскированными значениями;
+///  - временный секрет (одна передача, его вставляет сам владелец) — без подтверждения.
 /// </summary>
 public sealed class AgentGateway
 {
@@ -69,14 +70,19 @@ public sealed class AgentGateway
     /// </summary>
     private readonly AsyncLocal<string?> _session = new();
 
-    public AgentGateway(Func<Vault?> vault, IConfirmer confirmer, AgentLog log, Func<bool> enabled, Func<DateTime>? now = null)
+    public AgentGateway(Func<Vault?> vault, IConfirmer confirmer, AgentLog log, Func<bool> enabled, Func<DateTime>? now = null,
+                        TempSecret? temp = null)
     {
         _vault = vault;
         _confirmer = confirmer;
         _log = log;
         _enabled = enabled;
         _now = now ?? (() => DateTime.Now);
+        Temp = temp ?? new TempSecret(_now);
     }
+
+    /// <summary>Временный секрет — верхняя строка шторки. Подтверждений не требует: значение передаёт сам владелец.</summary>
+    public TempSecret Temp { get; }
 
     /// <summary>Действующие доверия — для экрана настроек.</summary>
     public IReadOnlyList<TrustedSession> ActiveTrust()
@@ -135,6 +141,8 @@ public sealed class AgentGateway
                 "store" => await StoreAsync(vault, client, r, ct),
                 "delete" => await DeleteAsync(vault, client, r, ct),
                 "scan" => await ScanAsync(client, r, ct),
+                "temp_take" => TempTake(client),
+                "temp_put" => await TempPutAsync(client, r, ct),
                 _ => AgentResponse.Fail($"Неизвестная операция «{r.Op}»."),
             };
         }
@@ -193,29 +201,45 @@ public sealed class AgentGateway
         string program = Path.GetFileNameWithoutExtension(exe);
 
         var used = new List<(EnvSecret env, VaultEntry e, VaultField f)>();
+        var tempEnv = new List<string>();
         foreach (var env in r.Env)
         {
             if (string.IsNullOrWhiteSpace(env.Name)) throw new AgentError("У переменной окружения нет имени.");
+            if (env.Temp) { tempEnv.Add(env.Name); continue; }
             var (e, f) = Resolve(v, env.Entry, env.Field, FieldAccess.Inject);
             CheckTarget(e, f, program);
             used.Add((env, e, f));
         }
         var stdinRefs = r.StdinTemplate == null ? new() : ResolveRefs(v, SecretText.FindRefs(r.StdinTemplate), program);
         var all = used.Select(u => (u.e, u.f)).Concat(stdinRefs).ToList();
-        if (all.Count == 0) throw new AgentError("Нет ни одного секрета для подстановки — обычные команды запускайте без SecretShelf.");
+        bool useTemp = tempEnv.Count > 0 || SecretText.HasTempRef(r.StdinTemplate);
+        if (all.Count == 0 && !useTemp) throw new AgentError("Нет ни одного секрета для подстановки — обычные команды запускайте без SecretShelf.");
+        if (useTemp && !Temp.AvailableToAgent(out var whyTemp)) throw new AgentError(whyTemp);
 
         var details = new StringBuilder();
         details.AppendLine(ProcessRunner.Display(exe, r.Args));
         if (!string.IsNullOrEmpty(r.Cwd)) details.AppendLine("Папка: " + r.Cwd);
         foreach (var u in used) details.AppendLine($"${u.env.Name} ← {u.e.Title} / {u.f.Label}");
+        foreach (var n in tempEnv) details.AppendLine($"${n} ← временный секрет");
         if (r.StdinTemplate != null) details.AppendLine("На ввод программы: " + r.StdinTemplate);
-        string target = string.Join(", ", all.Select(x => $"{x.e.Title} / {x.f.Label}").Distinct());
+        string target = string.Join(", ", all.Select(x => $"{x.e.Title} / {x.f.Label}").Distinct().Concat(useTemp ? new[] { "временный секрет" } : Array.Empty<string>()));
 
-        await Approve(client, "run", target, all.Select(x => x.f), $"{client} запускает программу с ключом", details.ToString(), ct);
+        // Временный секрет подтверждения не требует; поля хранилища — как обычно.
+        if (all.Count > 0)
+            await Approve(client, "run", target, all.Select(x => x.f), $"{client} запускает программу с ключом", details.ToString(), ct);
 
+        string? temp = null;
+        if (useTemp)
+        {
+            temp = Temp.TakeByAgent(client, out var why) ?? throw new AgentError(why);
+            _log.Write(client, "run", target, "временный секрет подставлен и стёрт");
+        }
         var envValues = used.ToDictionary(u => u.env.Name, u => v.GetValue(u.e.Id, u.f.Key));
+        foreach (var n in tempEnv) envValues[n] = temp!;
         string? stdin = r.StdinTemplate == null ? null : SecretText.Render(r.StdinTemplate, rf => ValueOf(v, rf));
+        if (stdin != null && temp != null) stdin = SecretText.RenderTemp(stdin, temp);
         var secrets = all.Select(x => v.GetValue(x.e.Id, x.f.Key)).ToList();
+        if (temp != null) secrets.Add(temp);
 
         var res = await ProcessRunner.RunAsync(exe, r.Args, envValues, stdin, r.Cwd, Math.Clamp(r.TimeoutSeconds, 1, 600), ct);
         string text = $"Код выхода: {res.ExitCode}{(res.TimedOut ? " (остановлено по таймауту)" : "")}\n" +
@@ -229,15 +253,26 @@ public sealed class AgentGateway
         string path = CheckPath(r.Path, mustExist: false);
         if (string.IsNullOrEmpty(r.Template)) throw new AgentError("Пустой шаблон (template).");
         var refs = ResolveRefs(v, SecretText.FindRefs(r.Template), "file");
-        if (refs.Count == 0) throw new AgentError("В шаблоне нет ссылок {{Запись/Поле}} — обычные файлы пишите без SecretShelf.");
+        bool useTemp = SecretText.HasTempRef(r.Template);
+        if (refs.Count == 0 && !useTemp)
+            throw new AgentError("В шаблоне нет ссылок {{Запись/Поле}} или {{Временный}} — обычные файлы пишите без SecretShelf.");
+        if (useTemp && !Temp.AvailableToAgent(out var whyTemp)) throw new AgentError(whyTemp);
 
         bool exists = File.Exists(path);
         string details = $"Файл: {path}{(exists ? "\nФайл уже есть — будет перезаписан, рядом останется копия .bak" : "")}\n" +
                          $"Шаблон:\n{SecretText.Truncate(r.Template, 2000)}";
-        string target = string.Join(", ", refs.Select(x => $"{x.e.Title} / {x.f.Label}").Distinct());
-        await Approve(client, "write_file", target, refs.Select(x => x.f), $"{client} записывает ключ в файл", details, ct);
+        string target = string.Join(", ", refs.Select(x => $"{x.e.Title} / {x.f.Label}").Distinct()
+                                              .Concat(useTemp ? new[] { "временный секрет" } : Array.Empty<string>()));
+        if (refs.Count > 0)
+            await Approve(client, "write_file", target, refs.Select(x => x.f), $"{client} записывает ключ в файл", details, ct);
 
         string content = SecretText.Render(r.Template, rf => ValueOf(v, rf));
+        if (useTemp)
+        {
+            string temp = Temp.TakeByAgent(client, out var why) ?? throw new AgentError(why);
+            content = SecretText.RenderTemp(content, temp);
+            _log.Write(client, "write_file", target, $"временный секрет записан в {path} и стёрт");
+        }
         string? backup = null;
         if (exists)
         {
@@ -256,6 +291,68 @@ public sealed class AgentGateway
         string entry = (r.Entry ?? "").Trim(), field = (r.Field ?? "").Trim();
         if (entry.Length == 0 || field.Length == 0) throw new AgentError("Укажите запись (entry) и поле (field).");
 
+        var (sourceText, read) = SourceReader(r, ct);
+
+        var existing = TryResolve(v, entry, field);
+        if (existing is { } ex && ex.f.Access < FieldAccess.NameOnly)
+            throw new AgentError($"Поле «{entry} / {field}» закрыто для агентов — перезаписать его может только владелец.");
+
+        string what = existing == null ? "новое поле" : "заменить значение (прежнее останется в истории записи)";
+        await Approve(client, "store", $"{entry} / {field}", existing == null ? Array.Empty<VaultField>() : new[] { existing.Value.f },
+            $"{client} кладёт ключ в шторку", $"Куда: {entry} / {field} — {what}\nОткуда: {sourceText}", ct,
+            alwaysConfirm: existing == null);
+
+        string value = await read();
+        if (value.Length == 0) throw new AgentError("Получилось пустое значение — сохранять нечего.");
+
+        if (existing is { } x)
+        {
+            var drafts = DraftsOf(v, x.e);
+            drafts.First(d => d.Key == x.f.Key).Value = value;
+            v.UpdateEntry(x.e.Id, x.e.Title, drafts);
+        }
+        else
+        {
+            var target = FindEntryByTitle(v, entry);
+            var newField = new VaultFieldDraft { Label = field, Value = value, IsSecret = r.Secret, Access = FieldAccess.Inject };
+            if (target == null) v.AddEntry(entry, new[] { newField });
+            else
+            {
+                var drafts = DraftsOf(v, target);
+                drafts.Add(newField);
+                v.UpdateEntry(target.Id, target.Title, drafts);
+            }
+        }
+        VaultChanged?.Invoke();
+        return AgentResponse.Success($"Сохранено в «{entry} / {field}» ({value.Length} символов). Значение агенту не показывалось. " +
+                                     "Исходный файл не тронут — удалять его или нет, решает владелец.");
+    }
+
+    /// <summary>Отдать агенту значение временного секрета, положенное владельцем, и стереть его.</summary>
+    private AgentResponse TempTake(string client)
+    {
+        string value = Temp.TakeByAgent(client, out var why) ?? throw new AgentError(why);
+        _log.Write(client, "temp_take", "временный секрет", "значение выдано агенту и стёрто");
+        return AgentResponse.Success(value);
+    }
+
+    /// <summary>Положить во временный секрет значение для владельца — из файла, .env или вывода программы.</summary>
+    private async Task<AgentResponse> TempPutAsync(string client, AgentRequest r, CancellationToken ct)
+    {
+        var (sourceText, read) = SourceReader(r, ct);
+        string value = await read();
+        if (value.Length == 0) throw new AgentError("Получилось пустое значение — класть нечего.");
+        bool replaced = !Temp.IsEmpty;
+        Temp.PutByAgent(value, client);
+        _log.Write(client, "temp_put", "временный секрет", "положено: " + sourceText);
+        return AgentResponse.Success($"Положено во временный секрет шторки ({value.Length} символов), значение агенту не показывалось. " +
+                                     "Скажите владельцу: он скопирует его из верхней строки шторки, после этого секрет сотрётся." +
+                                     (replaced ? " Прежнее значение временного секрета заменено." : ""));
+    }
+
+    /// <summary>Источник значения для store и temp_put: файл, переменная из .env или вывод программы.</summary>
+    private static (string sourceText, Func<Task<string>> read) SourceReader(AgentRequest r, CancellationToken ct)
+    {
         string sourceText;
         Func<Task<string>> read;
         switch (r.Source)
@@ -292,40 +389,7 @@ public sealed class AgentGateway
             default:
                 throw new AgentError("Источник (source): file, env_file или command.");
         }
-
-        var existing = TryResolve(v, entry, field);
-        if (existing is { } ex && ex.f.Access < FieldAccess.NameOnly)
-            throw new AgentError($"Поле «{entry} / {field}» закрыто для агентов — перезаписать его может только владелец.");
-
-        string what = existing == null ? "новое поле" : "заменить значение (прежнее останется в истории записи)";
-        await Approve(client, "store", $"{entry} / {field}", existing == null ? Array.Empty<VaultField>() : new[] { existing.Value.f },
-            $"{client} кладёт ключ в шторку", $"Куда: {entry} / {field} — {what}\nОткуда: {sourceText}", ct,
-            alwaysConfirm: existing == null);
-
-        string value = await read();
-        if (value.Length == 0) throw new AgentError("Получилось пустое значение — сохранять нечего.");
-
-        if (existing is { } x)
-        {
-            var drafts = DraftsOf(v, x.e);
-            drafts.First(d => d.Key == x.f.Key).Value = value;
-            v.UpdateEntry(x.e.Id, x.e.Title, drafts);
-        }
-        else
-        {
-            var target = FindEntryByTitle(v, entry);
-            var newField = new VaultFieldDraft { Label = field, Value = value, IsSecret = r.Secret, Access = FieldAccess.Inject };
-            if (target == null) v.AddEntry(entry, new[] { newField });
-            else
-            {
-                var drafts = DraftsOf(v, target);
-                drafts.Add(newField);
-                v.UpdateEntry(target.Id, target.Title, drafts);
-            }
-        }
-        VaultChanged?.Invoke();
-        return AgentResponse.Success($"Сохранено в «{entry} / {field}» ({value.Length} символов). Значение агенту не показывалось. " +
-                                     "Исходный файл не тронут — удалять его или нет, решает владелец.");
+        return (sourceText, read);
     }
 
     private async Task<AgentResponse> DeleteAsync(Vault v, string client, AgentRequest r, CancellationToken ct)

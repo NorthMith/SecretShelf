@@ -6,8 +6,11 @@ namespace SecretShelf.Core.Agents;
 /// <summary>Ссылка на поле хранилища: «Запись / Поле» по названиям, как их видит владелец.</summary>
 public sealed record SecretRef(string Entry, string Field);
 
-/// <summary>Секрет, передаваемый запускаемой программе переменной окружения.</summary>
-public sealed record EnvSecret(string Name, string Entry, string Field);
+/// <summary>
+/// Секрет, передаваемый запускаемой программе переменной окружения:
+/// поле «Запись / Поле» или временный секрет (<paramref name="Temp"/>).
+/// </summary>
+public sealed record EnvSecret(string Name, string? Entry = null, string? Field = null, bool Temp = false);
 
 /// <summary>
 /// Запрос MCP-сервера к шторке. Одна строка JSON на подключение к каналу.
@@ -15,7 +18,7 @@ public sealed record EnvSecret(string Name, string Entry, string Field);
 /// </summary>
 public sealed class AgentRequest
 {
-    /// <summary>list | get | run | write_file | store | delete | scan</summary>
+    /// <summary>list | get | run | write_file | store | delete | scan | temp_take | temp_put</summary>
     public string Op { get; set; } = "";
     /// <summary>Имя агента, как он сам себя назвал (не проверяется).</summary>
     public string Client { get; set; } = "";
@@ -36,7 +39,7 @@ public sealed class AgentRequest
     public string? Path { get; set; }
     public string? Template { get; set; }
 
-    // store: source = file | env_file | command
+    // store, temp_put: source = file | env_file | command
     public string? Source { get; set; }
     public string? Variable { get; set; }
     /// <summary>Новое поле секретное (скрыто точками). Для логинов и адресов — false.</summary>

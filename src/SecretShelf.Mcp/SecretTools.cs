@@ -4,11 +4,12 @@ using SecretShelf.Core.Agents;
 
 namespace SecretShelf.Mcp;
 
-/// <summary>Переменная окружения для запускаемой программы, значение — из поля шторки.</summary>
+/// <summary>Переменная окружения для запускаемой программы, значение — из поля шторки или временный секрет.</summary>
 public sealed record EnvSecretArg(
     [property: Description("Environment variable name, e.g. ANTHROPIC_API_KEY")] string Name,
-    [property: Description("Entry title in SecretShelf, e.g. \"API A\"")] string Entry,
-    [property: Description("Field label inside the entry, e.g. \"Ключ API\"")] string Field);
+    [property: Description("Entry title in SecretShelf, e.g. \"API A\" (omit when temp=true)")] string? Entry = null,
+    [property: Description("Field label inside the entry, e.g. \"Ключ API\" (omit when temp=true)")] string? Field = null,
+    [property: Description("true: use the temporary secret the owner pasted into the top row of SecretShelf")] bool Temp = false);
 
 /// <summary>
 /// Инструменты MCP. Описания — по-английски: их читают модели разных производителей.
@@ -18,7 +19,35 @@ public sealed record EnvSecretArg(
 public static class SecretTools
 {
     private const string Rules =
-        " Secret values are never returned to you; never ask the user to paste secrets into the chat.";
+        " Secret values are not returned to you; never ask the user to paste secrets into the chat.";
+
+    private const string TempRef =
+        " {{Временный}} is the temporary secret the owner pasted into the top row of SecretShelf: " +
+        "it is used once without confirmation and then wiped.";
+
+    [McpServerTool(Name = "take_temp_secret"),
+     Description("Return the value of the temporary secret the owner pasted into the top row of SecretShelf, and wipe it. " +
+                 "No confirmation. Prefer NOT to read it: inject it blind with write_secret_file / run_with_secrets using " +
+                 "{{Временный}} (or env temp=true), so the value never enters the conversation. Read it only when there is no " +
+                 "other way (e.g. it must be typed into a web form) or the user asked. Works once; ask the owner to paste again if needed.")]
+    public static Task<string> TakeTempSecret(ModelContextProtocol.Server.McpServer server, CancellationToken ct) =>
+        Send(server, new AgentRequest { Op = "temp_take" }, ct);
+
+    [McpServerTool(Name = "put_temp_secret", Destructive = true),
+     Description("Hand a value to the owner through the temporary secret (top row of SecretShelf) without it entering the chat: " +
+                 "read from a file (source=file), a .env variable (source=env_file + variable) or a program's output (source=command). " +
+                 "No confirmation; replaces a previous temporary value. Then tell the owner to copy it from SecretShelf — it is wiped after copying.")]
+    public static Task<string> PutTempSecret(ModelContextProtocol.Server.McpServer server,
+        [Description("file | env_file | command")] string source,
+        [Description("Full path for source=file or source=env_file")] string? path = null,
+        [Description("Variable name for source=env_file")] string? variable = null,
+        [Description("Program for source=command")] string? command = null,
+        [Description("Arguments for source=command")] string[]? args = null,
+        CancellationToken ct = default) =>
+        Send(server, new AgentRequest
+        {
+            Op = "temp_put", Source = source, Path = path, Variable = variable, Command = command, Args = args?.ToList() ?? new(),
+        }, ct);
 
     [McpServerTool(Name = "list_secrets", ReadOnly = true),
      Description("List SecretShelf entries and fields the owner has opened to AI agents, with their access level " +
@@ -40,7 +69,7 @@ public static class SecretTools
                  "No shell is used: give the program and its arguments separately; a $VAR in arguments is NOT expanded. " +
                  "Prefer programs that read the key from an environment variable; for curl pass headers via stdin " +
                  "(args [\"-H\", \"@-\", url], stdin_template \"x-api-key: {{Entry/Field}}\"). " +
-                 "The owner may be asked to confirm. Output comes back with secret values replaced by ***." + Rules)]
+                 "The owner may be asked to confirm. Output comes back with secret values replaced by ***." + TempRef + Rules)]
     public static Task<string> RunWithSecrets(ModelContextProtocol.Server.McpServer server,
         [Description("Program name or full path, e.g. curl, python, ssh")] string command,
         [Description("Arguments, one item per argument")] string[]? args = null,
@@ -52,17 +81,17 @@ public static class SecretTools
         Send(server, new AgentRequest
         {
             Op = "run", Command = command, Args = args?.ToList() ?? new(),
-            Env = env?.Select(e => new EnvSecret(e.Name, e.Entry, e.Field)).ToList() ?? new(),
+            Env = env?.Select(e => new EnvSecret(e.Name, e.Entry, e.Field, e.Temp)).ToList() ?? new(),
             StdinTemplate = stdin_template, Cwd = cwd, TimeoutSeconds = timeout_seconds,
         }, ct);
 
     [McpServerTool(Name = "write_secret_file", Destructive = true),
      Description("Write a file (for example a .env or a config) from a template with {{Entry/Field}} placeholders. " +
                  "The file is readable only by the current Windows user; an existing file is backed up next to it. " +
-                 "The owner may be asked to confirm." + Rules)]
+                 "The owner may be asked to confirm." + TempRef + Rules)]
     public static Task<string> WriteSecretFile(ModelContextProtocol.Server.McpServer server,
         [Description("Full path of the file to write")] string path,
-        [Description("File content with {{Entry/Field}} placeholders, e.g. \"ANTHROPIC_API_KEY={{API A/Ключ API}}\\n\"")] string template,
+        [Description("File content with {{Entry/Field}} or {{Временный}} placeholders, e.g. \"ANTHROPIC_API_KEY={{API A/Ключ API}}\\n\"")] string template,
         CancellationToken ct) =>
         Send(server, new AgentRequest { Op = "write_file", Path = path, Template = template }, ct);
 

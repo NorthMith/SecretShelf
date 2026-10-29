@@ -108,7 +108,12 @@
 
                 <!-- ===== Список ===== -->
                 <Grid x:Name="ListPanel" Grid.Row="1" Visibility="Collapsed">
-                    <ListBox x:Name="EntryList" Background="Transparent" BorderThickness="0" Padding="10,2,6,2"
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <local:TempSecretBar x:Name="TempBar"/>
+                    <ListBox x:Name="EntryList" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="10,2,6,2"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              VirtualizingPanel.ScrollUnit="Pixel" AllowDrop="True"
                              PreviewMouseMove="EntryList_PreviewMouseMove"
@@ -213,7 +218,7 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-                    <TextBlock x:Name="EmptyHint" TextWrapping="Wrap" TextAlignment="Center" Margin="30,60,30,0"
+                    <TextBlock x:Name="EmptyHint" Grid.Row="1" TextWrapping="Wrap" TextAlignment="Center" Margin="30,60,30,0"
                                Foreground="{StaticResource TextDim}" Visibility="Collapsed"
                                Text="Пока пусто. Нажмите «+» внизу справа, чтобы добавить первую запись."/>
                 </Grid>
