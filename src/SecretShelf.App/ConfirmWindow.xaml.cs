@@ -1,4 +1,8 @@
+using System.IO;
+using System.Media;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using SecretShelf.Core.Agents;
@@ -31,8 +35,9 @@ public partial class ConfirmWindow : Window
 
         _timer.Tick += (_, _) =>
         {
-            if (--_left <= 0) Finish(ConfirmDecision.Deny);
-            else CountdownText.Text = $"Нет ответа {_left} с — отказ";
+            if (--_left <= 0) { Finish(ConfirmDecision.Deny); return; }
+            CountdownText.Text = $"Нет ответа {_left} с — отказ";
+            if (_left == RemindAtSeconds) Alert(); // пропустил первый сигнал — второй, пока не поздно
         };
         CountdownText.Text = $"Нет ответа {_left} с — отказ";
         Loaded += (_, _) =>
@@ -42,8 +47,48 @@ public partial class ConfirmWindow : Window
             Top = wa.Bottom - ActualHeight - 8;
             _timer.Start();
             DenyButton.Focus(); // Enter по привычке не должен разрешать
+            Alert();
         };
     }
+
+    private const int RemindAtSeconds = 20;
+    private static readonly string AlertSound =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Media", "Windows Notify System Generic.wav");
+
+    /// <summary>Звук и мигание кнопки на панели задач: окно в углу легко не заметить.</summary>
+    private void Alert()
+    {
+        try
+        {
+            // Свой файл звучит и при схеме «Без звука», где системные события молчат.
+            if (File.Exists(AlertSound)) new SoundPlayer(AlertSound).Play();
+            else SystemSounds.Exclamation.Play();
+        }
+        catch { SystemSounds.Exclamation.Play(); }
+
+        var fi = new FLASHWINFO
+        {
+            cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(),
+            hwnd = new WindowInteropHelper(this).Handle,
+            dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG,
+        };
+        FlashWindowEx(ref fi);
+    }
+
+    private const uint FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FLASHWINFO
+    {
+        public uint cbSize;
+        public IntPtr hwnd;
+        public uint dwFlags;
+        public uint uCount;
+        public uint dwTimeout;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool FlashWindowEx(ref FLASHWINFO pwfi);
 
     public Task<ConfirmDecision> Answer => _answer.Task;
 
